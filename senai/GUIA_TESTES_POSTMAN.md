@@ -11,6 +11,7 @@ Este documento descreve como testar a API do backend do projeto pelo Postman e r
 	- usuário padrão: `root`
 	- senha padrão: `root`
 - O Flyway executa a migration `V1__create_schema.sql` na inicialização.
+- As migrations `V2__seed_postman_data.sql` e `V3__seed_process_postman_data.sql` criam dados-base para os testes de consórcio, cota e processo.
 
 Depois de alterar o código, pare a execução antiga no Eclipse e inicie novamente o projeto. Se a porta `8080` já estiver ocupada, não inicie uma segunda instância: use a aplicação que já está rodando ou encerre a execução anterior antes de iniciar outra.
 
