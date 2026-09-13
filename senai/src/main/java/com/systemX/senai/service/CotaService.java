@@ -22,7 +22,11 @@ public class CotaService {
     }
     public CotaResponse criar(CotaRequest request) {
         Grupo grupo = grupoRepository.findById(request.grupoId()).orElseThrow(() -> new ResourceNotFoundException("Grupo não encontrado: " + request.grupoId()));
-        return toResponse(repository.save(Cota.builder().numero(request.numero()).grupo(grupo).valorCredito(request.valorCredito()).build()));
+        Cota cota = new Cota();
+        cota.setNumero(request.numero());
+        cota.setGrupo(grupo);
+        cota.setValorCredito(request.valorCredito());
+        return toResponse(repository.save(cota));
     }
     public List<CotaResponse> listar() { return repository.findAll().stream().map(this::toResponse).toList(); }
     private CotaResponse toResponse(Cota item) { return new CotaResponse(item.getId(), item.getNumero(), item.getGrupo().getId(), item.getGrupo().getNumero(), item.getValorCredito(), item.isAtiva()); }

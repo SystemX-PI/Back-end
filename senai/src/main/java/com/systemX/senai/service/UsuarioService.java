@@ -15,8 +15,11 @@ public class UsuarioService {
     private final UsuarioRepository repository;
     public UsuarioService(UsuarioRepository repository) { this.repository = repository; }
     public UsuarioResponse criar(UsuarioRequest request) {
-        Usuario usuario = Usuario.builder().nome(request.nome()).email(request.email())
-                .senha(request.senha()).tipo(request.tipo()).build();
+        Usuario usuario = new Usuario();
+        usuario.setNome(request.nome());
+        usuario.setEmail(request.email());
+        usuario.setSenha(request.senha());
+        usuario.setTipo(request.tipo());
         return toResponse(repository.save(usuario));
     }
     public List<UsuarioResponse> listar() { return repository.findAll().stream().map(this::toResponse).toList(); }

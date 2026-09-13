@@ -22,7 +22,10 @@ public class ConsorcioService {
     }
     public ConsorcioResponse criar(ConsorcioRequest request) {
         TipoConsorcio tipo = tipoRepository.findById(request.tipoId()).orElseThrow(() -> new ResourceNotFoundException("Tipo de consórcio não encontrado: " + request.tipoId()));
-        return toResponse(repository.save(Consorcio.builder().nome(request.nome()).tipo(tipo).build()));
+        Consorcio consorcio = new Consorcio();
+        consorcio.setNome(request.nome());
+        consorcio.setTipo(tipo);
+        return toResponse(repository.save(consorcio));
     }
     public List<ConsorcioResponse> listar() { return repository.findAll().stream().map(this::toResponse).toList(); }
     private ConsorcioResponse toResponse(Consorcio item) { return new ConsorcioResponse(item.getId(), item.getNome(), item.getTipo().getId(), item.getTipo().getNome(), item.isAtivo()); }

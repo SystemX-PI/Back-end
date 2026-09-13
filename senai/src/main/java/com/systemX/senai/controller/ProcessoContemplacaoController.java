@@ -17,6 +17,6 @@ import jakarta.validation.Valid;
 public class ProcessoContemplacaoController {
     private final ProcessoContemplacaoService service;
     public ProcessoContemplacaoController(ProcessoContemplacaoService service) { this.service = service; }
-    @GetMapping("/{id}") public ProcessoResponse buscar(@PathVariable Long id) { return service.buscar(id); }
-    @PatchMapping("/{id}/status") public ProcessoResponse atualizarStatus(@PathVariable Long id, @Valid @RequestBody StatusProcessoRequest request) { return service.atualizarStatus(id, request); }
+    @GetMapping("/{id}") public ProcessoResponse buscar(@PathVariable("id") Long id) { return service.buscar(id); }
+    @PatchMapping("/{id}/status") public ProcessoResponse atualizarStatus(@PathVariable("id") Long id, @Valid @RequestBody StatusProcessoRequest request) { return service.atualizarStatus(id, request); }
 }
