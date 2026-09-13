@@ -3,6 +3,7 @@ package com.systemX.senai.service;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.systemX.senai.dto.CotaRequest;
 import com.systemX.senai.dto.CotaResponse;
@@ -28,6 +29,7 @@ public class CotaService {
         cota.setValorCredito(request.valorCredito());
         return toResponse(repository.save(cota));
     }
+    @Transactional(readOnly = true)
     public List<CotaResponse> listar() { return repository.findAll().stream().map(this::toResponse).toList(); }
     private CotaResponse toResponse(Cota item) { return new CotaResponse(item.getId(), item.getNumero(), item.getGrupo().getId(), item.getGrupo().getNumero(), item.getValorCredito(), item.isAtiva()); }
 }

@@ -30,11 +30,18 @@ public class ProcessoContemplacaoService {
     public ProcessoResponse atualizarStatus(Long id, StatusProcessoRequest request) {
         ProcessoContemplacao processo = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id));
         Usuario usuario = usuarioRepository.findById(request.usuarioId()).orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado: " + request.usuarioId()));
-        historicoRepository.save(HistoricoProcesso.builder().processo(processo).statusAnterior(processo.getStatus())
-                .novoStatus(request.status()).usuario(usuario).data(LocalDateTime.now()).observacao(request.observacao()).build());
+        HistoricoProcesso historico = new HistoricoProcesso();
+        historico.setProcesso(processo);
+        historico.setStatusAnterior(processo.getStatus());
+        historico.setNovoStatus(request.status());
+        historico.setUsuario(usuario);
+        historico.setData(LocalDateTime.now());
+        historico.setObservacao(request.observacao());
+        historicoRepository.save(historico);
         processo.setStatus(request.status()); processo.setResponsavel(usuario); processo.setAtualizadoEm(LocalDateTime.now());
         return toResponse(repository.save(processo));
     }
+    @Transactional(readOnly = true)
     public ProcessoResponse buscar(Long id) { return toResponse(repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id))); }
     private ProcessoResponse toResponse(ProcessoContemplacao p) { return new ProcessoResponse(p.getId(), p.getContemplacao().getId(), p.getResponsavel() == null ? null : p.getResponsavel().getId(), p.getStatus(), p.getCriadoEm(), p.getAtualizadoEm()); }
 }

@@ -15,4 +15,6 @@ public class Contemplacao {
     @Column(nullable = false) private LocalDate data;
     @Enumerated(EnumType.STRING) @Column(nullable = false) private TipoContemplacao tipo;
     @Column(nullable = false, precision = 15, scale = 2) private BigDecimal valor;
+
+    public Long getId() { return id; }
 }
