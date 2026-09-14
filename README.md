@@ -48,16 +48,10 @@ A API sera iniciada em:
 http://localhost:8080
 ```
 
-Ao acessar `http://localhost:8080`, a aplicacao redireciona automaticamente para a documentacao interativa da API:
+Ao acessar `http://localhost:8080`, a aplicacao redireciona para a documentacao interativa da API:
 
 ```text
-http://localhost:8080/swagger-ui/index.html
-```
-
-O contrato OpenAPI em JSON fica disponivel em:
-
-```text
-http://localhost:8080/v3/api-docs
+http://localhost:8080/
 ```
 
 Na tela do Swagger, use **Try it out** para preencher os bodies e executar as requisicoes diretamente no navegador.
