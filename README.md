@@ -11,6 +11,7 @@ API REST para gerenciamento de consorcios, cotas, usuarios e processos de contem
 - MySQL
 - Flyway
 - Gradle
+- Swagger/OpenAPI
 
 ## Requisitos
 
@@ -46,6 +47,20 @@ A API sera iniciada em:
 ```text
 http://localhost:8080
 ```
+
+Ao acessar `http://localhost:8080`, a aplicacao redireciona automaticamente para a documentacao interativa da API:
+
+```text
+http://localhost:8080/swagger-ui/index.html
+```
+
+O contrato OpenAPI em JSON fica disponivel em:
+
+```text
+http://localhost:8080/v3/api-docs
+```
+
+Na tela do Swagger, use **Try it out** para preencher os bodies e executar as requisicoes diretamente no navegador.
 
 No Eclipse, importe especificamente a pasta `Back-end/senai` como `Gradle > Existing Gradle Project` e execute `SenaiApplication.java` como `Spring Boot App`.
 
