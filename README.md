@@ -10,14 +10,14 @@ API REST para gerenciamento de consorcios, cotas, usuarios e processos de contem
 - Spring Data JPA
 - MySQL
 - Flyway
-- Gradle
+- Maven
 - Swagger/OpenAPI
 
 ## Requisitos
 
 - JDK 17
 - MySQL 8
-- Eclipse com suporte a Gradle/Buildship ou outro IDE compativel
+- Eclipse/VS Code com suporte a Maven
 
 ## Configuracao do banco
 
@@ -35,11 +35,11 @@ O Flyway executa automaticamente as migrations em `senai/src/main/resources/db/m
 
 ## Executar a aplicacao
 
-Entre na pasta do modulo Gradle:
+Entre na pasta do modulo Maven:
 
 ```powershell
 cd senai
-.\gradlew.bat clean bootRun
+mvn spring-boot:run
 ```
 
 A API sera iniciada em:
@@ -56,7 +56,7 @@ http://localhost:8080/
 
 Na tela do Swagger, use **Try it out** para preencher os bodies e executar as requisicoes diretamente no navegador.
 
-No Eclipse, importe especificamente a pasta `Back-end/senai` como `Gradle > Existing Gradle Project` e execute `SenaiApplication.java` como `Spring Boot App`.
+No Eclipse ou VS Code, importe a pasta `Back-end/senai` como projeto Maven e execute `SenaiApplication.java` como `Spring Boot App`.
 
 ## Testes
 
@@ -64,7 +64,7 @@ Para validar o projeto:
 
 ```powershell
 cd senai
-.\gradlew.bat clean test
+mvn test
 ```
 
 O roteiro completo de testes no Postman esta em [senai/GUIA_TESTES_POSTMAN.md](senai/GUIA_TESTES_POSTMAN.md).
