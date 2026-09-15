@@ -2,6 +2,7 @@ package com.systemX.senai.service;
 
 import java.util.List;
 
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.systemX.senai.dto.UsuarioRequest;
@@ -13,12 +14,16 @@ import com.systemX.senai.repository.UsuarioRepository;
 @Service
 public class UsuarioService {
     private final UsuarioRepository repository;
-    public UsuarioService(UsuarioRepository repository) { this.repository = repository; }
+    private final PasswordEncoder passwordEncoder;
+    public UsuarioService(UsuarioRepository repository, PasswordEncoder passwordEncoder) {
+        this.repository = repository;
+        this.passwordEncoder = passwordEncoder;
+    }
     public UsuarioResponse criar(UsuarioRequest request) {
         Usuario usuario = new Usuario();
         usuario.setNome(request.nome());
         usuario.setEmail(request.email());
-        usuario.setSenha(request.senha());
+        usuario.setSenha(passwordEncoder.encode(request.senha()));
         usuario.setTipo(request.tipo());
         return toResponse(repository.save(usuario));
     }
