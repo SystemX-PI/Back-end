@@ -69,6 +69,56 @@ mvn test
 
 O roteiro completo de testes no Postman esta em [senai/GUIA_TESTES_POSTMAN.md](senai/GUIA_TESTES_POSTMAN.md).
 
+## Fluxo seguro de colaboracao
+
+As branches seguem esta regra:
+
+- `main`: branch de producao. Nao fazer push direto.
+- `develop`: branch de integracao e validacao da equipe. As alteracoes devem chegar por Pull Request.
+- `feature/<nome>` ou `fix/<nome>`: branch individual para cada tarefa.
+
+### Como revisar o que outra pessoa fez
+
+1. Confira o Pull Request e a branch de origem.
+2. Revise a aba **Files changed** no GitHub.
+3. Procure alteracoes em autenticacao, permissoes, banco, migrations, variaveis de ambiente e endpoints.
+4. Execute os testes antes de aprovar:
+
+```powershell
+cd senai
+mvn test
+```
+
+5. So aprove se a alteracao tiver objetivo claro, teste correspondente e nao expuser senha, token, segredo JWT ou credencial do banco.
+
+### Como enviar uma alteracao para `develop`
+
+```powershell
+git checkout develop
+git pull origin develop
+git checkout -b feature/minha-alteracao
+
+# editar e testar
+git status
+git diff
+git add README.md senai
+git commit -m "feat: descreve a alteracao"
+git push -u origin feature/minha-alteracao
+```
+
+Depois, abra um Pull Request de `feature/minha-alteracao` para `develop`. A equipe revisa o diff, executa os testes e somente entao faz o merge. A `main` recebe apenas alteracoes ja validadas em `develop`.
+
+### Regra de autorizacao
+
+Cada pessoa pode alterar apenas o que foi combinado na tarefa. Nao aprovar automaticamente mudancas fora do escopo, exclusao de migrations, remocao de autenticacao, alteracao de permissoes ou inclusao de segredos. Para mudancas sensiveis, exigir pelo menos uma revisao de outra pessoa e registrar no Pull Request:
+
+- o que foi alterado;
+- por que foi alterado;
+- como foi testado;
+- quais endpoints e permissoes foram afetados.
+
+O token universal de desenvolvimento existe apenas para testes locais. Ele deve permanecer desativado em ambientes compartilhados e nunca deve ser usado como credencial de producao.
+
 ## Endpoints principais
 
 | Metodo | Endpoint | Finalidade |
