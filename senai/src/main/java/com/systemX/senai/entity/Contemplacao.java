@@ -17,4 +17,15 @@ public class Contemplacao {
     @Column(nullable = false, precision = 15, scale = 2) private BigDecimal valor;
 
     public Long getId() { return id; }
+
+    public static Contemplacao criar(Cota cota, Assembleia assembleia, LocalDate data,
+            TipoContemplacao tipo, BigDecimal valor) {
+        Contemplacao contemplacao = new Contemplacao();
+        contemplacao.cota = cota;
+        contemplacao.assembleia = assembleia;
+        contemplacao.data = data;
+        contemplacao.tipo = tipo;
+        contemplacao.valor = valor;
+        return contemplacao;
+    }
 }
