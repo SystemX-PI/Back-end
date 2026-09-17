@@ -16,6 +16,7 @@ import com.systemX.senai.dto.BaixaResponse;
 import com.systemX.senai.dto.ComunicacaoResponse;
 import com.systemX.senai.dto.ContempladoRequest;
 import com.systemX.senai.dto.IntegracaoResponse;
+import com.systemX.senai.dto.WhatsAppRequest;
 import com.systemX.senai.service.BaixaService;
 import com.systemX.senai.service.IntegracaoContempladoService;
 
@@ -50,6 +51,12 @@ public class IntegracaoController {
     @PostMapping("/processos/{processoId}/comunicacao/reenvio")
     public ComunicacaoResponse reenviar(@PathVariable Long processoId) {
         return integracaoService.reenviar(processoId);
+    }
+
+    @PostMapping("/processos/{processoId}/comunicacao/whatsapp")
+    public ComunicacaoResponse whatsapp(@PathVariable Long processoId,
+            @Valid @RequestBody WhatsAppRequest request) {
+        return integracaoService.enviarWhatsApp(processoId, request);
     }
 
     @PostMapping("/processos/{processoId}/baixa")

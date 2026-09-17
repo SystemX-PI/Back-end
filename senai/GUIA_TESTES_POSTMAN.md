@@ -454,11 +454,12 @@ Ou configure no `application.properties` local:
 ```properties
 app.mail.enabled=true
 spring.mail.host=smtp.gmail.com
-spring.mail.port=587
+spring.mail.port=465
 spring.mail.username=seuemail@gmail.com
 spring.mail.password=senha-de-app-do-gmail
 spring.mail.properties.mail.smtp.auth=true
-spring.mail.properties.mail.smtp.starttls.enable=true
+spring.mail.properties.mail.smtp.socketFactory.port=465
+spring.mail.properties.mail.smtp.socketFactory.class=javax.net.ssl.SSLSocketFactory
 app.integration.api-key=integration-local-123
 ```
 
@@ -466,7 +467,55 @@ Não publique `spring.mail.password`, `JWT_SECRET` ou `app.integration.api-key` 
 
 Se `app.mail.enabled=false`, o processo será criado, mas a comunicação permanecerá `PENDENTE` com a mensagem de configuração no campo `erro`. Isso permite testar o recebimento sem enviar e-mails reais.
 
-### 9.2 Receber um contemplado de outro sistema
+### 9.2 Configurar WhatsApp Cloud API
+
+O WhatsApp usa a API oficial da Meta. No Meta for Developers:
+
+1. Crie um App do tipo **Business**.
+2. Adicione o produto **WhatsApp**.
+3. Copie o **Phone Number ID** do número de teste ou do número comercial.
+4. Gere um token de acesso com permissão `whatsapp_business_messaging`.
+5. Para o número de teste, adicione o telefone destinatário na lista de números permitidos.
+
+O telefone deve ser enviado no formato internacional, somente com números e código do país. Exemplo para Brasil: `5511999999999`.
+
+No Windows CMD, antes de iniciar a aplicação:
+
+```bat
+set WHATSAPP_ENABLED=true
+set WHATSAPP_PHONE_NUMBER_ID=ID_DO_PHONE_NUMBER
+set WHATSAPP_ACCESS_TOKEN=TOKEN_DA_META
+set WHATSAPP_API_VERSION=v23.0
+mvn spring-boot:run
+```
+
+O token não deve ser colocado no Git ou no `application.properties`.
+
+Em novas integrações, o backend tenta enviar a mesma mensagem pelos dois canais: e-mail e WhatsApp. A resposta mantém `comunicacaoId` e `statusComunicacao` para o e-mail e acrescenta `comunicacaoWhatsAppId` e `statusWhatsApp` para o WhatsApp.
+
+Para enviar WhatsApp a um processo já existente:
+
+**POST** `{{baseUrl}}/api/integracoes/processos/3/comunicacao/whatsapp`
+
+Headers:
+
+```text
+Authorization: Bearer token-local-123
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+	"telefone": "5511999999999",
+	"mensagem": "Ola, sua contemplacao foi registrada. Acesse o atendimento para consultar os proximos passos."
+}
+```
+
+Resultado esperado com a Meta configurada: `status: "SUCESSO"`.
+
+### 9.3 Receber um contemplado de outro sistema
 
 **POST** `{{baseUrl}}/api/integracoes/contemplacoes`
 
@@ -517,7 +566,7 @@ Resposta esperada com Gmail habilitado:
 
 Guarde `processoId` e `comunicacaoId`. Eles serão usados para acompanhar o fluxo.
 
-### 9.3 Evitar duplicidade
+### 9.4 Evitar duplicidade
 
 Envie novamente o mesmo body com o mesmo `origem` e `idExterno`. A API não criará outro processo. Ela responderá com `jaExistia: true` e os mesmos IDs.
 
@@ -529,7 +578,7 @@ origem + idExterno
 
 Sistemas diferentes podem usar o mesmo `idExterno`, desde que tenham `origem` diferente.
 
-### 9.4 Consultar se foi notificado
+### 9.5 Consultar se foi notificado
 
 **GET** `{{baseUrl}}/api/integracoes/processos/2/comunicacao`
 
@@ -562,7 +611,7 @@ Interpretação dos status:
 
 `SUCESSO` confirma o aceite pelo Gmail, mas não garante que o destinatário abriu a mensagem. Confirmações de entrega e leitura exigem integração adicional com o provedor.
 
-### 9.5 Reenviar comunicação
+### 9.6 Reenviar comunicação
 
 **POST** `{{baseUrl}}/api/integracoes/processos/2/comunicacao/reenvio`
 
@@ -574,7 +623,7 @@ Authorization: Bearer token-local-123
 
 O retorno mostra o novo status e eventual erro.
 
-### 9.6 Dar baixa no processo
+### 9.7 Dar baixa no processo
 
 **POST** `{{baseUrl}}/api/integracoes/processos/2/baixa`
 
@@ -608,7 +657,7 @@ Resposta esperada:
 
 A baixa altera o processo para `FINALIZADO`. Ela é idempotente: se for chamada novamente para o mesmo processo, retorna a baixa já existente.
 
-### 9.7 Consultar se foi dada a baixa
+### 9.8 Consultar se foi dada a baixa
 
 **GET** `{{baseUrl}}/api/integracoes/processos/2/baixa`
 

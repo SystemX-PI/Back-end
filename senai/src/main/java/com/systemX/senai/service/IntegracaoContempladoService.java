@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.systemX.senai.dto.ComunicacaoResponse;
 import com.systemX.senai.dto.ContempladoRequest;
 import com.systemX.senai.dto.IntegracaoResponse;
+import com.systemX.senai.dto.WhatsAppRequest;
 import com.systemX.senai.entity.Assembleia;
 import com.systemX.senai.entity.Comunicacao;
 import com.systemX.senai.entity.Contemplacao;
@@ -42,6 +43,7 @@ public class IntegracaoContempladoService {
     private final ComunicacaoRepository comunicacaoRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final WhatsAppService whatsAppService;
 
     public IntegracaoContempladoService(
             UsuarioRepository usuarioRepository,
@@ -52,7 +54,8 @@ public class IntegracaoContempladoService {
             ProcessoContemplacaoRepository processoRepository,
             ComunicacaoRepository comunicacaoRepository,
             PasswordEncoder passwordEncoder,
-            EmailService emailService) {
+            EmailService emailService,
+            WhatsAppService whatsAppService) {
         this.usuarioRepository = usuarioRepository;
         this.cotaRepository = cotaRepository;
         this.assembleiaRepository = assembleiaRepository;
@@ -62,6 +65,7 @@ public class IntegracaoContempladoService {
         this.comunicacaoRepository = comunicacaoRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
+        this.whatsAppService = whatsAppService;
     }
 
     @Transactional
@@ -69,8 +73,13 @@ public class IntegracaoContempladoService {
         var existente = processoRepository.findByOrigemAndIdExterno(request.origem(), request.idExterno());
         if (existente.isPresent()) {
             ProcessoContemplacao processo = existente.get();
-                Comunicacao comunicacao = comunicacaoRepository.findByProcessoId(processo.getId()).orElse(null);
-            return response(processo, comunicacao, true);
+                Comunicacao comunicacao = comunicacaoRepository
+                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.EMAIL)
+                    .orElse(null);
+                Comunicacao comunicacaoWhatsApp = comunicacaoRepository
+                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.WHATSAPP)
+                    .orElse(null);
+                return response(processo, comunicacao, comunicacaoWhatsApp, true);
         }
 
         Usuario cliente = usuarioRepository.findByEmail(request.email()).orElseGet(() -> criarCliente(request));
@@ -114,12 +123,17 @@ public class IntegracaoContempladoService {
         comunicacaoRepository.save(comunicacao);
 
         enviar(comunicacao);
-        return response(processo, comunicacao, false);
+        Comunicacao comunicacaoWhatsApp = null;
+        if (request.telefone() != null && !request.telefone().isBlank()) {
+            comunicacaoWhatsApp = criarWhatsApp(processo, responsavel, request.telefone(), mensagem);
+            enviar(comunicacaoWhatsApp);
+        }
+        return response(processo, comunicacao, comunicacaoWhatsApp, false);
     }
 
     @Transactional
     public ComunicacaoResponse reenviar(Long processoId) {
-        Comunicacao comunicacao = comunicacaoRepository.findByProcessoId(processoId)
+        Comunicacao comunicacao = comunicacaoRepository.findFirstByProcessoIdOrderByIdDesc(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Comunicação não encontrada para o processo: " + processoId));
         enviar(comunicacao);
         return toResponse(comunicacao);
@@ -127,28 +141,64 @@ public class IntegracaoContempladoService {
 
     @Transactional(readOnly = true)
     public ComunicacaoResponse consultar(Long processoId) {
-        return comunicacaoRepository.findByProcessoId(processoId).map(this::toResponse)
+        return comunicacaoRepository.findFirstByProcessoIdOrderByIdDesc(processoId).map(this::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Comunicação não encontrada para o processo: " + processoId));
+    }
+
+        @Transactional
+        public ComunicacaoResponse enviarWhatsApp(Long processoId, WhatsAppRequest request) {
+        ProcessoContemplacao processo = processoRepository.findById(processoId)
+            .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        Usuario responsavel = usuarioRepository.findFirstByAtivoTrue()
+            .orElseThrow(() -> new ResourceNotFoundException("Nenhum usuário ativo para registrar a comunicação"));
+        Comunicacao comunicacao = criarWhatsApp(processo, responsavel, request.telefone(), request.mensagem());
+        enviar(comunicacao);
+        return toResponse(comunicacao);
+        }
+
+    private Comunicacao criarWhatsApp(ProcessoContemplacao processo, Usuario responsavel,
+            String telefone, String mensagem) {
+        Comunicacao comunicacao = new Comunicacao();
+        comunicacao.setProcesso(processo);
+        comunicacao.setCanal(CanalComunicacao.WHATSAPP);
+        comunicacao.setStatus(StatusComunicacao.PENDENTE);
+        comunicacao.setResponsavel(responsavel);
+        comunicacao.setDestinatario(telefone);
+        comunicacao.setMensagem(mensagem);
+        comunicacao.setCriadaEm(LocalDateTime.now());
+        return comunicacaoRepository.save(comunicacao);
     }
 
     private Usuario criarCliente(ContempladoRequest request) {
         Usuario usuario = new Usuario();
         usuario.setNome(request.nome());
         usuario.setEmail(request.email());
+        usuario.setTelefone(request.telefone());
         usuario.setSenha(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
         usuario.setTipo(TipoUsuario.CLIENTE);
         return usuarioRepository.save(usuario);
     }
 
     private void enviar(Comunicacao comunicacao) {
-        if (!emailService.isEnabled()) {
+        boolean whatsApp = comunicacao.getCanal() == CanalComunicacao.WHATSAPP;
+        if (whatsApp && !whatsAppService.isEnabled()) {
+            comunicacao.setErro("WhatsApp desabilitado. Configure app.whatsapp.enabled=true.");
+            comunicacao.setStatus(StatusComunicacao.PENDENTE);
+            comunicacaoRepository.save(comunicacao);
+            return;
+        }
+        if (!whatsApp && !emailService.isEnabled()) {
             comunicacao.setErro("E-mail desabilitado. Configure app.mail.enabled=true.");
             comunicacao.setStatus(StatusComunicacao.PENDENTE);
             comunicacaoRepository.save(comunicacao);
             return;
         }
         try {
-            emailService.send(comunicacao.getDestinatario(), comunicacao.getAssunto(), comunicacao.getMensagem());
+            if (whatsApp) {
+                whatsAppService.send(comunicacao.getDestinatario(), comunicacao.getMensagem());
+            } else {
+                emailService.send(comunicacao.getDestinatario(), comunicacao.getAssunto(), comunicacao.getMensagem());
+            }
             comunicacao.setStatus(StatusComunicacao.SUCESSO);
             comunicacao.setEnviadaEm(LocalDateTime.now());
             comunicacao.setErro(null);
@@ -159,10 +209,13 @@ public class IntegracaoContempladoService {
         comunicacaoRepository.save(comunicacao);
     }
 
-    private IntegracaoResponse response(ProcessoContemplacao processo, Comunicacao comunicacao, boolean existente) {
+    private IntegracaoResponse response(ProcessoContemplacao processo, Comunicacao comunicacao,
+            Comunicacao comunicacaoWhatsApp, boolean existente) {
         return new IntegracaoResponse(processo.getId(), comunicacao == null ? null : comunicacao.getId(),
                 processo.getOrigem(), processo.getIdExterno(), processo.getStatus().name(),
-                comunicacao == null ? null : comunicacao.getStatus().name(), existente);
+                comunicacao == null ? null : comunicacao.getStatus().name(), existente,
+                comunicacaoWhatsApp == null ? null : comunicacaoWhatsApp.getId(),
+                comunicacaoWhatsApp == null ? null : comunicacaoWhatsApp.getStatus().name());
     }
 
     private ComunicacaoResponse toResponse(Comunicacao comunicacao) {

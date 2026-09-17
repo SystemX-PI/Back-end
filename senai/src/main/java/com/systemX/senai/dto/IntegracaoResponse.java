@@ -7,5 +7,7 @@ public record IntegracaoResponse(
         String idExterno,
         String statusProcesso,
         String statusComunicacao,
-        boolean jaExistia) {
+        boolean jaExistia,
+        Long comunicacaoWhatsAppId,
+        String statusWhatsApp) {
 }
