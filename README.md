@@ -12,6 +12,7 @@ API REST para gerenciamento de consorcios, cotas, usuarios e processos de contem
 - Flyway
 - Maven
 - Swagger/OpenAPI
+- Integração de contemplados e comunicação por e-mail
 
 ## Requisitos
 
@@ -131,3 +132,10 @@ O token universal de desenvolvimento existe apenas para testes locais. Ele deve 
 | GET | `/api/cotas` | Listar cotas |
 | GET | `/api/processos-contemplacao/{id}` | Consultar processo |
 | PATCH | `/api/processos-contemplacao/{id}/status` | Atualizar status do processo |
+| POST | `/api/integracoes/contemplacoes` | Receber contemplado de sistema externo |
+| GET | `/api/integracoes/processos/{id}/comunicacao` | Consultar envio da comunicação |
+| POST | `/api/integracoes/processos/{id}/comunicacao/reenvio` | Reenviar comunicação |
+| POST | `/api/integracoes/processos/{id}/baixa` | Finalizar processo com baixa |
+| GET | `/api/integracoes/processos/{id}/baixa` | Consultar baixa |
+
+O passo a passo completo dessa integração, configuração do Gmail e testes no Postman está em [senai/GUIA_TESTES_POSTMAN.md](senai/GUIA_TESTES_POSTMAN.md).

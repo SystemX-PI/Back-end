@@ -15,6 +15,8 @@ public class Usuario {
     @Column(nullable = false, unique = true)
     private String email;
 
+    private String telefone;
+
     @Column(nullable = false)
     private String senha;
 
@@ -53,6 +55,14 @@ public class Usuario {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getTelefone() {
+        return telefone;
+    }
+
+    public void setTelefone(String telefone) {
+        this.telefone = telefone;
     }
 
     public String getSenha() {

@@ -12,4 +12,13 @@ public class ParticipacaoCota {
     @Column(nullable = false) private LocalDate inicio;
     private LocalDate fim;
     @Builder.Default private boolean ativa = true;
+
+    public static ParticipacaoCota criar(Usuario usuario, Cota cota, LocalDate inicio) {
+        ParticipacaoCota participacao = new ParticipacaoCota();
+        participacao.usuario = usuario;
+        participacao.cota = cota;
+        participacao.inicio = inicio;
+        participacao.ativa = true;
+        return participacao;
+    }
 }

@@ -424,3 +424,257 @@ Envie um valor fora da lista, como `"tipo": "USUARIO"` ou `"status": "ABERTO"`. 
 | `GET` | `/api/cotas` | Listar cotas, exige JWT | `200` |
 | `GET` | `/api/processos-contemplacao/{id}` | Consultar processo, exige JWT | `200` |
 | `PATCH` | `/api/processos-contemplacao/{id}/status` | Alterar status, exige JWT | `200` |
+
+## 9. Integração de contemplados
+
+Este fluxo recebe dados de outro sistema, cria ou localiza o cliente, cria a contemplação, cria o processo e tenta enviar a comunicação por e-mail.
+
+### 9.1 Configurar Gmail
+
+Não use a senha normal do Gmail. Na conta que enviará as mensagens:
+
+1. Ative a verificação em duas etapas da conta Google.
+2. Acesse **Conta Google > Segurança > Senhas de app**.
+3. Crie uma senha de app para o sistema, por exemplo `Senai API`.
+4. Copie os 16 caracteres gerados.
+5. Configure as propriedades antes de iniciar a aplicação.
+
+No Windows CMD:
+
+```bat
+set MAIL_ENABLED=true
+set MAIL_USERNAME=seuemail@gmail.com
+set MAIL_PASSWORD=senha-de-app-do-gmail
+set INTEGRATION_API_KEY=integration-local-123
+mvn spring-boot:run
+```
+
+Ou configure no `application.properties` local:
+
+```properties
+app.mail.enabled=true
+spring.mail.host=smtp.gmail.com
+spring.mail.port=465
+spring.mail.username=seuemail@gmail.com
+spring.mail.password=senha-de-app-do-gmail
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.socketFactory.port=465
+spring.mail.properties.mail.smtp.socketFactory.class=javax.net.ssl.SSLSocketFactory
+app.integration.api-key=integration-local-123
+```
+
+Não publique `spring.mail.password`, `JWT_SECRET` ou `app.integration.api-key` no Git. Em produção, use variáveis de ambiente ou um gerenciador de segredos.
+
+Se `app.mail.enabled=false`, o processo será criado, mas a comunicação permanecerá `PENDENTE` com a mensagem de configuração no campo `erro`. Isso permite testar o recebimento sem enviar e-mails reais.
+
+### 9.2 Configurar WhatsApp Cloud API
+
+O WhatsApp usa a API oficial da Meta. No Meta for Developers:
+
+1. Crie um App do tipo **Business**.
+2. Adicione o produto **WhatsApp**.
+3. Copie o **Phone Number ID** do número de teste ou do número comercial.
+4. Gere um token de acesso com permissão `whatsapp_business_messaging`.
+5. Para o número de teste, adicione o telefone destinatário na lista de números permitidos.
+
+O telefone deve ser enviado no formato internacional, somente com números e código do país. Exemplo para Brasil: `5511999999999`.
+
+No Windows CMD, antes de iniciar a aplicação:
+
+```bat
+set WHATSAPP_ENABLED=true
+set WHATSAPP_PHONE_NUMBER_ID=ID_DO_PHONE_NUMBER
+set WHATSAPP_ACCESS_TOKEN=TOKEN_DA_META
+set WHATSAPP_API_VERSION=v23.0
+mvn spring-boot:run
+```
+
+O token não deve ser colocado no Git ou no `application.properties`.
+
+Em novas integrações, o backend tenta enviar a mesma mensagem pelos dois canais: e-mail e WhatsApp. A resposta mantém `comunicacaoId` e `statusComunicacao` para o e-mail e acrescenta `comunicacaoWhatsAppId` e `statusWhatsApp` para o WhatsApp.
+
+Para enviar WhatsApp a um processo já existente:
+
+**POST** `{{baseUrl}}/api/integracoes/processos/3/comunicacao/whatsapp`
+
+Headers:
+
+```text
+Authorization: Bearer token-local-123
+Content-Type: application/json
+```
+
+Body:
+
+```json
+{
+	"telefone": "5511999999999",
+	"mensagem": "Ola, sua contemplacao foi registrada. Acesse o atendimento para consultar os proximos passos."
+}
+```
+
+Resultado esperado com a Meta configurada: `status: "SUCESSO"`.
+
+### 9.3 Receber um contemplado de outro sistema
+
+**POST** `{{baseUrl}}/api/integracoes/contemplacoes`
+
+Headers:
+
+```text
+Content-Type: application/json
+X-Integration-Key: integration-local-123
+```
+
+Body > raw > JSON:
+
+```json
+{
+	"origem": "sistema-parceiro",
+	"idExterno": "CONT-POSTMAN-001",
+	"nome": "Maria da Silva",
+	"email": "seu-email-de-teste@gmail.com",
+	"telefone": "5511999999999",
+	"cotaId": 1,
+	"assembleiaId": 1,
+	"dataContemplacao": "2026-09-15",
+	"tipo": "SORTEIO",
+	"valorCredito": 50000.00
+}
+```
+
+O `cotaId` e o `assembleiaId` precisam existir no banco. Para consultar:
+
+```sql
+SELECT id, numero FROM cota;
+SELECT id, data FROM assembleia;
+```
+
+Resposta esperada com Gmail habilitado:
+
+```json
+{
+	"processoId": 2,
+	"comunicacaoId": 1,
+	"origem": "sistema-parceiro",
+	"idExterno": "CONT-POSTMAN-001",
+	"statusProcesso": "AGUARDANDO_COMUNICACAO",
+	"statusComunicacao": "SUCESSO",
+	"jaExistia": false
+}
+```
+
+Guarde `processoId` e `comunicacaoId`. Eles serão usados para acompanhar o fluxo.
+
+### 9.4 Evitar duplicidade
+
+Envie novamente o mesmo body com o mesmo `origem` e `idExterno`. A API não criará outro processo. Ela responderá com `jaExistia: true` e os mesmos IDs.
+
+O par abaixo identifica exclusivamente o recebimento:
+
+```text
+origem + idExterno
+```
+
+Sistemas diferentes podem usar o mesmo `idExterno`, desde que tenham `origem` diferente.
+
+### 9.5 Consultar se foi notificado
+
+**GET** `{{baseUrl}}/api/integracoes/processos/2/comunicacao`
+
+Essa rota exige o header:
+
+```text
+Authorization: Bearer token-local-123
+```
+
+Resposta:
+
+```json
+{
+	"id": 1,
+	"processoId": 2,
+	"canal": "EMAIL",
+	"destinatario": "seu-email-de-teste@gmail.com",
+	"status": "SUCESSO",
+	"erro": null,
+	"criadaEm": "2026-09-15T15:00:00",
+	"enviadaEm": "2026-09-15T15:00:02"
+}
+```
+
+Interpretação dos status:
+
+- `PENDENTE`: ainda não enviado ou Gmail desabilitado.
+- `SUCESSO`: o servidor SMTP aceitou o e-mail.
+- `FALHA`: houve erro no envio; consulte `erro` e use o reenvio.
+
+`SUCESSO` confirma o aceite pelo Gmail, mas não garante que o destinatário abriu a mensagem. Confirmações de entrega e leitura exigem integração adicional com o provedor.
+
+### 9.6 Reenviar comunicação
+
+**POST** `{{baseUrl}}/api/integracoes/processos/2/comunicacao/reenvio`
+
+Use o token universal local ou um JWT de administrador:
+
+```text
+Authorization: Bearer token-local-123
+```
+
+O retorno mostra o novo status e eventual erro.
+
+### 9.7 Dar baixa no processo
+
+**POST** `{{baseUrl}}/api/integracoes/processos/2/baixa`
+
+Headers:
+
+```text
+Content-Type: application/json
+Authorization: Bearer token-local-123
+```
+
+Body:
+
+```json
+{
+	"usuarioId": 1,
+	"observacao": "Cliente comunicado e processo concluído."
+}
+```
+
+Resposta esperada:
+
+```json
+{
+	"id": 1,
+	"processoId": 2,
+	"usuarioId": 1,
+	"data": "2026-09-15T15:20:00",
+	"observacao": "Cliente comunicado e processo concluído."
+}
+```
+
+A baixa altera o processo para `FINALIZADO`. Ela é idempotente: se for chamada novamente para o mesmo processo, retorna a baixa já existente.
+
+### 9.8 Consultar se foi dada a baixa
+
+**GET** `{{baseUrl}}/api/integracoes/processos/2/baixa`
+
+Header:
+
+```text
+Authorization: Bearer token-local-123
+```
+
+Se houver baixa, retorna os dados dela. Se ainda não houver, a API retorna `404 Not Found`.
+
+Também é possível consultar o processo:
+
+**GET** `{{baseUrl}}/api/processos-contemplacao/2`
+
+Depois da baixa, o campo `status` deve ser:
+
+```text
+FINALIZADO
+```
