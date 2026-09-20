@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.systemX.senai.dto.ComunicacaoResponse;
+import com.systemX.senai.dto.CanalComunicacaoResponse;
 import com.systemX.senai.dto.ContempladoRequest;
 import com.systemX.senai.dto.IntegracaoResponse;
 import com.systemX.senai.dto.WhatsAppRequest;
@@ -133,16 +134,36 @@ public class IntegracaoContempladoService {
 
     @Transactional
     public ComunicacaoResponse reenviar(Long processoId) {
-        Comunicacao comunicacao = comunicacaoRepository.findFirstByProcessoIdOrderByIdDesc(processoId)
-                .orElseThrow(() -> new ResourceNotFoundException("Comunicação não encontrada para o processo: " + processoId));
-        enviar(comunicacao);
-        return toResponse(comunicacao);
+        Comunicacao email = comunicacaoRepository
+                .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.EMAIL)
+                .orElse(null);
+        Comunicacao whatsapp = comunicacaoRepository
+                .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.WHATSAPP)
+                .orElse(null);
+        if (email == null && whatsapp == null) {
+            throw new ResourceNotFoundException("Comunicação não encontrada para o processo: " + processoId);
+        }
+        if (email != null) {
+            enviar(email);
+        }
+        if (whatsapp != null) {
+            enviar(whatsapp);
+        }
+        return toResponse(processoId, email, whatsapp);
     }
 
     @Transactional(readOnly = true)
     public ComunicacaoResponse consultar(Long processoId) {
-        return comunicacaoRepository.findFirstByProcessoIdOrderByIdDesc(processoId).map(this::toResponse)
-                .orElseThrow(() -> new ResourceNotFoundException("Comunicação não encontrada para o processo: " + processoId));
+        Comunicacao email = comunicacaoRepository
+            .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.EMAIL)
+            .orElse(null);
+        Comunicacao whatsapp = comunicacaoRepository
+            .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.WHATSAPP)
+            .orElse(null);
+        if (email == null && whatsapp == null) {
+            throw new ResourceNotFoundException("Comunicação não encontrada para o processo: " + processoId);
+        }
+        return toResponse(processoId, email, whatsapp);
     }
 
         @Transactional
@@ -219,8 +240,27 @@ public class IntegracaoContempladoService {
     }
 
     private ComunicacaoResponse toResponse(Comunicacao comunicacao) {
-        return new ComunicacaoResponse(comunicacao.getId(), comunicacao.getProcesso().getId(),
-                comunicacao.getCanal().name(), comunicacao.getDestinatario(), comunicacao.getStatus().name(),
-                comunicacao.getErro(), comunicacao.getCriadaEm(), comunicacao.getEnviadaEm());
+        Comunicacao email = comunicacao.getCanal() == CanalComunicacao.EMAIL ? comunicacao : null;
+        Comunicacao whatsapp = comunicacao.getCanal() == CanalComunicacao.WHATSAPP ? comunicacao : null;
+        return toResponse(comunicacao.getProcesso().getId(), email, whatsapp);
+    }
+
+    private ComunicacaoResponse toResponse(Long processoId, Comunicacao email, Comunicacao whatsapp) {
+        boolean emailSucesso = email != null && email.getStatus() == StatusComunicacao.SUCESSO;
+        boolean whatsappSucesso = whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO;
+        String statusGeral = emailSucesso && whatsappSucesso
+                ? "COMUNICADO_NOS_DOIS"
+                : emailSucesso || whatsappSucesso ? "COMUNICADO_PARCIAL" : "PENDENTE";
+        return new ComunicacaoResponse(processoId, statusGeral,
+                canalResponse(email), canalResponse(whatsapp));
+    }
+
+    private CanalComunicacaoResponse canalResponse(Comunicacao comunicacao) {
+        if (comunicacao == null) {
+            return null;
+        }
+        return new CanalComunicacaoResponse(comunicacao.getId(), comunicacao.getDestinatario(),
+                comunicacao.getStatus().name(), comunicacao.getErro(), comunicacao.getCriadaEm(),
+                comunicacao.getEnviadaEm());
     }
 }

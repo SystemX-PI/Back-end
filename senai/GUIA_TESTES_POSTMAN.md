@@ -10,9 +10,11 @@ Este documento descreve como testar a API do backend do projeto pelo Postman e r
 	- banco: `senai`
 	- usuário padrão: `root`
 	- senha padrão: `root`
-- O Flyway executa as migrations `V1` até `V4` na inicialização.
+- O Flyway executa as migrations `V1` até `V6` na inicialização.
 - As migrations `V2__seed_postman_data.sql` e `V3__seed_process_postman_data.sql` criam dados-base para os testes de consórcio, cota e processo.
 - A migration `V4__create_refresh_tokens.sql` cria a tabela usada pelos refresh tokens.
+- A migration `V5__extend_communication_flow.sql` adiciona os dados de comunicação.
+- A migration `V6__add_phone_to_users.sql` adiciona o telefone dos usuários.
 
 Depois de alterar o código, pare a execução antiga no Eclipse e inicie novamente o projeto. Se a porta `8080` já estiver ocupada, não inicie uma segunda instância: use a aplicação que já está rodando ou encerre a execução anterior antes de iniciar outra.
 
@@ -467,31 +469,47 @@ Não publique `spring.mail.password`, `JWT_SECRET` ou `app.integration.api-key` 
 
 Se `app.mail.enabled=false`, o processo será criado, mas a comunicação permanecerá `PENDENTE` com a mensagem de configuração no campo `erro`. Isso permite testar o recebimento sem enviar e-mails reais.
 
-### 9.2 Configurar WhatsApp Cloud API
+### 9.2 Configurar a configuracao local
 
-O WhatsApp usa a API oficial da Meta. No Meta for Developers:
+Para nao precisar configurar variaveis toda vez que iniciar o projeto:
 
-1. Crie um App do tipo **Business**.
-2. Adicione o produto **WhatsApp**.
-3. Copie o **Phone Number ID** do número de teste ou do número comercial.
-4. Gere um token de acesso com permissão `whatsapp_business_messaging`.
-5. Para o número de teste, adicione o telefone destinatário na lista de números permitidos.
+1. Copie `application-local.properties.example` para `application-local.properties` na pasta `senai`.
+2. Preencha a `app.whatsapp.api-key` com a chave da Evolution API.
+3. Se for usar Gmail, preencha `spring.mail.username` e `spring.mail.password` com uma senha de app do Google.
+4. Inicie normalmente com Maven:
 
-O telefone deve ser enviado no formato internacional, somente com números e código do país. Exemplo para Brasil: `5511999999999`.
-
-No Windows CMD, antes de iniciar a aplicação:
-
-```bat
-set WHATSAPP_ENABLED=true
-set WHATSAPP_PHONE_NUMBER_ID=ID_DO_PHONE_NUMBER
-set WHATSAPP_ACCESS_TOKEN=TOKEN_DA_META
-set WHATSAPP_API_VERSION=v23.0
+```powershell
+cd "C:\caminho\para\Back-end\senai"
 mvn spring-boot:run
 ```
 
-O token não deve ser colocado no Git ou no `application.properties`.
+O arquivo `application-local.properties` e ignorado pelo Git. Cada colega deve criar o seu a partir do exemplo.
+
+### 9.3 Configurar WhatsApp com Evolution API
+
+O WhatsApp usa uma Evolution API executada localmente em Docker. A instância padrão é `consorcio` e a API escuta em `http://localhost:8081`.
+
+Configure a `apikey` definida na sua instalação da Evolution API.
+
+O telefone deve ser enviado no formato internacional, somente com números e código do país. Exemplo para Brasil: `5511999999999`.
+
+Se preferir usar variaveis de ambiente, no Windows PowerShell:
+
+```powershell
+$env:WHATSAPP_ENABLED = "true"
+$env:EVOLUTION_API_URL = "http://localhost:8081"
+$env:EVOLUTION_API_KEY = "SUA_API_KEY"
+$env:EVOLUTION_INSTANCE = "consorcio"
+
+cd "C:\caminho\para\Back-end\senai"
+mvn spring-boot:run
+```
+
+Os valores podem permanecer nos padrões de URL e instância. A `EVOLUTION_API_KEY` não deve ser colocada no Git ou no `application.properties` versionado.
 
 Em novas integrações, o backend tenta enviar a mesma mensagem pelos dois canais: e-mail e WhatsApp. A resposta mantém `comunicacaoId` e `statusComunicacao` para o e-mail e acrescenta `comunicacaoWhatsAppId` e `statusWhatsApp` para o WhatsApp.
+
+O endpoint `/comunicacao/whatsapp` envia somente WhatsApp. Ele não envia e-mail; para tentar os dois canais, use `/api/integracoes/contemplacoes` com e-mail e telefone preenchidos.
 
 Para enviar WhatsApp a um processo já existente:
 
@@ -513,9 +531,9 @@ Body:
 }
 ```
 
-Resultado esperado com a Meta configurada: `status: "SUCESSO"`.
+Resultado esperado com a Evolution API configurada: `status: "SUCESSO"`.
 
-### 9.3 Receber um contemplado de outro sistema
+### 9.4 Receber um contemplado de outro sistema
 
 **POST** `{{baseUrl}}/api/integracoes/contemplacoes`
 
@@ -592,16 +610,28 @@ Resposta:
 
 ```json
 {
-	"id": 1,
 	"processoId": 2,
-	"canal": "EMAIL",
-	"destinatario": "seu-email-de-teste@gmail.com",
-	"status": "SUCESSO",
-	"erro": null,
-	"criadaEm": "2026-09-15T15:00:00",
-	"enviadaEm": "2026-09-15T15:00:02"
+	"statusGeral": "COMUNICADO_NOS_DOIS",
+	"email": {
+		"id": 1,
+		"destinatario": "seu-email-de-teste@gmail.com",
+		"status": "SUCESSO",
+		"erro": null,
+		"criadaEm": "2026-09-15T15:00:00",
+		"enviadaEm": "2026-09-15T15:00:02"
+	},
+	"whatsapp": {
+		"id": 2,
+		"destinatario": "5511956865680",
+		"status": "SUCESSO",
+		"erro": null,
+		"criadaEm": "2026-09-15T15:00:00",
+		"enviadaEm": "2026-09-15T15:00:03"
+	}
 }
 ```
+
+`statusGeral` vale `COMUNICADO_NOS_DOIS` somente quando os dois canais estão com `SUCESSO`. Se apenas um for enviado, vale `COMUNICADO_PARCIAL`; se nenhum tiver sucesso, vale `PENDENTE`. O `SUCESSO` do WhatsApp confirma que a Meta aceitou a requisição, mas não confirma entrega ou leitura no aparelho.
 
 Interpretação dos status:
 

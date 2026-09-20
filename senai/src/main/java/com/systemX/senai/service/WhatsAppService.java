@@ -12,20 +12,18 @@ import org.springframework.web.client.RestClientException;
 public class WhatsAppService {
     private final RestClient restClient;
     private final boolean enabled;
-    private final String phoneNumberId;
-    private final String accessToken;
-    private final String apiVersion;
+    private final String apiKey;
+    private final String instance;
 
     public WhatsAppService(
             @Value("${app.whatsapp.enabled:false}") boolean enabled,
-            @Value("${app.whatsapp.phone-number-id:}") String phoneNumberId,
-            @Value("${app.whatsapp.access-token:}") String accessToken,
-            @Value("${app.whatsapp.api-version:v23.0}") String apiVersion) {
-        this.restClient = RestClient.builder().baseUrl("https://graph.facebook.com").build();
+            @Value("${app.whatsapp.api-url:http://localhost:8081}") String apiUrl,
+            @Value("${app.whatsapp.api-key:}") String apiKey,
+            @Value("${app.whatsapp.instance:consorcio}") String instance) {
+        this.restClient = RestClient.builder().baseUrl(apiUrl).build();
         this.enabled = enabled;
-        this.phoneNumberId = phoneNumberId;
-        this.accessToken = accessToken;
-        this.apiVersion = apiVersion;
+        this.apiKey = apiKey;
+        this.instance = instance;
     }
 
     public boolean isEnabled() {
@@ -33,9 +31,9 @@ public class WhatsAppService {
     }
 
     public void send(String recipient, String text) {
-        if (phoneNumberId.isBlank() || accessToken.isBlank()) {
+        if (apiKey.isBlank() || instance.isBlank()) {
             throw new IllegalStateException(
-                    "WhatsApp nao configurado. Informe WHATSAPP_PHONE_NUMBER_ID e WHATSAPP_ACCESS_TOKEN.");
+                    "WhatsApp nao configurado. Informe EVOLUTION_API_KEY e EVOLUTION_INSTANCE.");
         }
 
         String phone = recipient.replaceAll("\\D", "");
@@ -45,18 +43,14 @@ public class WhatsAppService {
 
         try {
             restClient.post()
-                    .uri("/{version}/{phoneNumberId}/messages", apiVersion, phoneNumberId)
-                    .header("Authorization", "Bearer " + accessToken)
+                    .uri("/message/sendText/{instance}", instance)
+                    .header("apikey", apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of(
-                            "messaging_product", "whatsapp",
-                            "to", phone,
-                            "type", "text",
-                            "text", Map.of("preview_url", false, "body", text)))
+                    .body(Map.of("number", phone, "text", text))
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException exception) {
-            throw new IllegalStateException("Falha ao enviar mensagem pela WhatsApp Cloud API: "
+            throw new IllegalStateException("Falha ao enviar mensagem pela Evolution API: "
                     + exception.getMessage(), exception);
         }
     }

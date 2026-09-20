@@ -1,0 +1,18 @@
+# Copie este arquivo para application-local.properties e preencha os valores locais.
+# application-local.properties nao deve ser commitado.
+
+# Evolution API local
+app.whatsapp.enabled=true
+app.whatsapp.api-url=http://localhost:8081
+app.whatsapp.api-key=coloque-aqui-sua-chave-secreta
+app.whatsapp.instance=consorcio
+
+# Gmail com senha de app do Google
+app.mail.enabled=true
+spring.mail.username=julio.botaccio@gmail.com
+spring.mail.password=iweyosjdzlsghaew
+
+# Token local de desenvolvimento do backend
+app.security.dev-token-enabled=true
+app.security.dev-token=token-local-123
+app.integration.api-key=integration-local-123

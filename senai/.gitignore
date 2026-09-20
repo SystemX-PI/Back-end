@@ -34,3 +34,6 @@ out/
 .vscode/
 /target/
 /.apt_generated_tests/
+
+# Configuracao local com credenciais e tokens
+application-local.properties
