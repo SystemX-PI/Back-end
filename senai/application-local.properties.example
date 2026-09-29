@@ -2,15 +2,16 @@
 # application-local.properties nao deve ser commitado.
 
 # Evolution API local
-app.whatsapp.enabled=true
+app.whatsapp.enabled=false
 app.whatsapp.api-url=http://localhost:8081
-app.whatsapp.api-key=coloque-aqui-sua-chave-secreta
+app.whatsapp.api-key=
 app.whatsapp.instance=consorcio
 
-# Gmail com senha de app do Google
-app.mail.enabled=true
-spring.mail.username=julio.botaccio@gmail.com
-spring.mail.password=iweyosjdzlsghaew
+# O frontend configura Gmail e senha de app em PUT /api/configuracoes/email.
+# As credenciais ficam apenas na memoria do backend e precisam ser enviadas novamente apos reiniciar.
+app.mail.enabled=false
+spring.mail.username=
+spring.mail.password=
 
 # Token local de desenvolvimento do backend
 app.security.dev-token-enabled=true

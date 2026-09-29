@@ -28,6 +28,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/api/usuarios").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+                        .requestMatchers("/api/configuracoes/**").hasRole("ADMINISTRADOR")
                         .anyRequest().authenticated())
                     .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> response.sendError(401)))

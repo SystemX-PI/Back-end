@@ -17,10 +17,32 @@ API REST para gerenciamento de consorcios, cotas, usuarios e processos de contem
 ## Requisitos
 
 - JDK 17
-- MySQL 8
-- Eclipse/VS Code com suporte a Maven
+- Docker Desktop com Docker Compose (recomendado para iniciar sem instalar Maven/MySQL)
+- Para execucao manual: Maven 3.9+ e MySQL 8
 
-## Configuracao do banco
+## Inicializacao rapida com Docker
+
+Depois de clonar o repositorio e iniciar o Docker Desktop, execute na raiz:
+
+```powershell
+docker compose up --build
+```
+
+O Compose aguarda o MySQL ficar saudavel, compila e testa o backend dentro do container e aplica as migrations do Flyway na primeira inicializacao. A API fica em `http://localhost:8080` e o Swagger em `http://localhost:8080/swagger-ui/index.html`.
+
+Para parar, use `Ctrl+C` e depois `docker compose down`. Os dados do MySQL ficam no volume `senai-mysql-data`; para apagar tambem o banco local, use `docker compose down -v`.
+
+Se as portas padrao ja estiverem ocupadas, defina `API_PORT` ou `MYSQL_PORT`, por exemplo:
+
+```powershell
+$env:API_PORT=8082
+$env:MYSQL_PORT=3308
+docker compose up --build
+```
+
+O token `token-local-123` e as credenciais do banco no Compose sao somente para desenvolvimento local. Nao os reutilize em producao.
+
+## Configuracao do banco manual
 
 Por padrao, a aplicacao usa:
 
@@ -34,9 +56,20 @@ Esses valores podem ser substituidos pelas variaveis de ambiente `DB_URL`, `DB_U
 
 O Flyway executa automaticamente as migrations em `senai/src/main/resources/db/migration` e cria os dados-base usados nos testes do Postman.
 
+O envio de e-mail inicia desabilitado. Depois de autenticar, o frontend pode configurar o Gmail com senha de app por `PUT /api/configuracoes/email`:
+
+```json
+{
+	"email": "remetente@gmail.com",
+	"senhaAplicativo": "senha-de-app-do-google"
+}
+```
+
+Envie o token JWT no header `Authorization: Bearer <token>`. A API responde com `configurado` e o e-mail, sem retornar a senha. As credenciais ficam somente na memoria do backend e precisam ser enviadas novamente quando ele reiniciar. Em producao, use HTTPS para proteger esse envio.
+
 ## Executar a aplicacao
 
-Entre na pasta do modulo Maven:
+Para executar sem Docker, entre na pasta do modulo Maven depois de configurar o MySQL:
 
 ```powershell
 cd senai
