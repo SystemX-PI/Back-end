@@ -16,11 +16,13 @@ import com.systemX.senai.dto.BaixaResponse;
 import com.systemX.senai.dto.ComunicacaoResponse;
 import com.systemX.senai.dto.ContempladoRequest;
 import com.systemX.senai.dto.IntegracaoResponse;
+import com.systemX.senai.dto.FilaComunicacaoResponse;
 import com.systemX.senai.dto.WhatsAppRequest;
 import com.systemX.senai.service.BaixaService;
 import com.systemX.senai.service.IntegracaoContempladoService;
 
 import jakarta.validation.Valid;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/integracoes")
@@ -46,6 +48,11 @@ public class IntegracaoController {
     @GetMapping("/processos/{processoId}/comunicacao")
     public ComunicacaoResponse comunicacao(@PathVariable Long processoId) {
         return integracaoService.consultar(processoId);
+    }
+
+    @GetMapping("/comunicacoes/fila")
+    public List<FilaComunicacaoResponse> fila() {
+        return integracaoService.listarFila();
     }
 
     @PostMapping("/processos/{processoId}/comunicacao/reenvio")

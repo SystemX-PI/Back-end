@@ -3,6 +3,7 @@ package com.systemX.senai.service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,7 @@ import com.systemX.senai.dto.ComunicacaoResponse;
 import com.systemX.senai.dto.CanalComunicacaoResponse;
 import com.systemX.senai.dto.ContempladoRequest;
 import com.systemX.senai.dto.IntegracaoResponse;
+import com.systemX.senai.dto.FilaComunicacaoResponse;
 import com.systemX.senai.dto.WhatsAppRequest;
 import com.systemX.senai.entity.Assembleia;
 import com.systemX.senai.entity.Comunicacao;
@@ -123,17 +125,36 @@ public class IntegracaoContempladoService {
         comunicacao.setCriadaEm(LocalDateTime.now());
         comunicacaoRepository.save(comunicacao);
 
-        enviar(comunicacao);
         Comunicacao comunicacaoWhatsApp = null;
         if (request.telefone() != null && !request.telefone().isBlank()) {
             comunicacaoWhatsApp = criarWhatsApp(processo, responsavel, request.telefone(), mensagem);
-            enviar(comunicacaoWhatsApp);
         }
         return response(processo, comunicacao, comunicacaoWhatsApp, false);
     }
 
+    @Transactional(readOnly = true)
+    public List<FilaComunicacaoResponse> listarFila() {
+        return processoRepository.findAllByOrderByCriadoEmDesc().stream()
+                .map(processo -> {
+                    Comunicacao email = comunicacaoRepository
+                            .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.EMAIL)
+                            .orElse(null);
+                    Comunicacao whatsapp = comunicacaoRepository
+                            .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.WHATSAPP)
+                            .orElse(null);
+                    return new FilaComunicacaoResponse(
+                            processo.getId(), processo.getOrigem(), processo.getIdExterno(),
+                            processo.getStatus().name(), processo.getCriadoEm(),
+                            toResponse(processo.getId(), email, whatsapp));
+                })
+                .filter(item -> item.comunicacao().email() != null || item.comunicacao().whatsapp() != null)
+                .toList();
+    }
+
     @Transactional
     public ComunicacaoResponse reenviar(Long processoId) {
+        ProcessoContemplacao processo = processoRepository.findById(processoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
         Comunicacao email = comunicacaoRepository
                 .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.EMAIL)
                 .orElse(null);
@@ -144,11 +165,19 @@ public class IntegracaoContempladoService {
             throw new ResourceNotFoundException("Comunicação não encontrada para o processo: " + processoId);
         }
         if (email != null) {
+            processo.setStatus(StatusProcesso.EM_COMUNICACAO);
+            processo.setAtualizadoEm(LocalDateTime.now());
+            processoRepository.save(processo);
             enviar(email);
         }
         if (whatsapp != null) {
             enviar(whatsapp);
         }
+        boolean comunicado = (email != null && email.getStatus() == StatusComunicacao.SUCESSO)
+                || (whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO);
+        processo.setStatus(comunicado ? StatusProcesso.CLIENTE_CONTATADO : StatusProcesso.AGUARDANDO_COMUNICACAO);
+        processo.setAtualizadoEm(LocalDateTime.now());
+        processoRepository.save(processo);
         return toResponse(processoId, email, whatsapp);
     }
 
