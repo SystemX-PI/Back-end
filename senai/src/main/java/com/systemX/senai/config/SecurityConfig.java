@@ -26,10 +26,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/api/auth/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/usuarios").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
-                        .requestMatchers("/api/configuracoes/**").hasRole("ADMINISTRADOR")
-                        .anyRequest().authenticated())
+                    .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
+                    .requestMatchers("/api/configuracoes/**").hasRole("ADMINISTRADOR")
+                    .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+                    .anyRequest().authenticated())
                     .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> response.sendError(401)))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
