@@ -3,6 +3,7 @@ package com.systemX.senai.exception;
 import org.springframework.http.*;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 
@@ -16,6 +17,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidCredentialsException.class)
     ResponseEntity<ApiError> unauthorized(InvalidCredentialsException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ApiError(401, ex.getMessage()));
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    ResponseEntity<ApiError> serviceError(ResponseStatusException ex) {
+        HttpStatusCode status = ex.getStatusCode();
+        String message = ex.getReason() == null ? "Falha ao acessar o serviço externo." : ex.getReason();
+        return ResponseEntity.status(status).body(new ApiError(status.value(), message));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

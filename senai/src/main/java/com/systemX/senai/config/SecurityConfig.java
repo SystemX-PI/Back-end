@@ -27,10 +27,9 @@ public class SecurityConfig {
                     .requestMatchers("/api/auth/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/usuarios").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
-                    .requestMatchers("/api/configuracoes/**").hasRole("ADMINISTRADOR")
+                    .requestMatchers("/api/configuracoes/**", "/api/integracoes/whatsapp/**").hasRole("ADMINISTRADOR")
                     .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
-                    .anyRequest().authenticated())
-                    .exceptionHandling(exceptions -> exceptions
+                    .anyRequest().authenticated())                    .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> response.sendError(401)))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
