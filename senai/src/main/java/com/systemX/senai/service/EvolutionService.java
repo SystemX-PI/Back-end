@@ -83,6 +83,20 @@ public class EvolutionService {
         return response(instanceName, state, null, null, null);
     }
 
+    public void disconnect(String instanceName) { deleteRemote("/instance/logout/", instanceName); }
+    public void remove(String instanceName) { deleteRemote("/instance/delete/", instanceName); }
+    private void deleteRemote(String path, String instanceName) {
+        requireConfiguration();
+        try {
+            restClient.delete().uri(path + UriUtils.encodePathSegment(instanceName, StandardCharsets.UTF_8))
+                .header("apikey", apiKey).retrieve().toBodilessEntity();
+        } catch (RestClientResponseException e) {
+            if(e.getStatusCode().value()!=404) throw evolutionError(e);
+        } catch(Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível atualizar a conexão do WhatsApp.");
+        }
+    }
+
     private JsonNode getConnection(String instanceName, String encodedName) {
         try {
             return get("/instance/connectionState/" + encodedName);

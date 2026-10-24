@@ -1,0 +1,5 @@
+# Local-only overrides; token remains disabled unless explicitly enabled.
+app:
+  security:
+    dev-token-enabled: ${DEV_TOKEN_ENABLED:false}
+    dev-token: ${DEV_API_TOKEN:}

@@ -19,8 +19,10 @@ import com.systemX.senai.repository.UsuarioRepository;
 public class UsuarioService {
     private final UsuarioRepository repository;
     private final PasswordEncoder passwordEncoder;
-    public UsuarioService(UsuarioRepository repository, PasswordEncoder passwordEncoder) {
+    private final PlatformService platform;
+    public UsuarioService(UsuarioRepository repository, PasswordEncoder passwordEncoder, PlatformService platform) {
         this.repository = repository;
+        this.platform = platform;
         this.passwordEncoder = passwordEncoder;
     }
     public UsuarioResponse criar(UsuarioRequest request) {
@@ -37,7 +39,7 @@ public class UsuarioService {
     @Transactional(readOnly = true)
     public UsuarioResponse consultar(Long id) { return toResponse(buscar(id)); }
     public UsuarioResponse registrar(RegistroRequest request) {
-        return criar(new UsuarioRequest(request.nome(), request.email(), request.senha(), TipoUsuario.CLIENTE));
+        return platform.signup(request.nome(), request.email(), request.senha());
     }
     public UsuarioResponse atualizar(Long id, UsuarioAtualizacaoRequest request) {
         Usuario item = buscar(id);

@@ -1,6 +1,10 @@
 # Back-end SystemX
 
-API REST para gerenciamento de consorcios, cotas, usuarios e processos de contemplacao.
+API REST da plataforma por contas de clientes: usuários da equipe, identidade da marca, múltiplas integrações WhatsApp/Gmail, teste gratuito e compra simulada. Os módulos anteriores de consórcios permanecem disponíveis no código.
+
+O cadastro e a demonstração incluem um WhatsApp e um Gmail. Somente a compra confirmada libera três WhatsApps e dois Gmails por 30 dias. Pix e cartão são simulados, com preço ilustrativo e sem cobrança real. O servidor valida o isolamento das contas e os limites.
+
+Consulte [o relatório completo da plataforma](RELATORIO_PLATAFORMA.md) e [as instruções locais](LOCAL.md). Os endpoints atuais ficam em `/api/platform`; o cadastro e o login ficam em `/api/auth`. As seções de consórcios abaixo documentam os módulos legados.
 
 ## Tecnologias
 
@@ -32,13 +36,7 @@ O Compose aguarda o MySQL ficar saudavel, compila e testa o backend dentro do co
 
 Para parar, use `Ctrl+C` e depois `docker compose down`. Os dados do MySQL ficam no volume `senai-mysql-data`; para apagar tambem o banco local, use `docker compose down -v`.
 
-Se as portas padrao ja estiverem ocupadas, defina `API_PORT` ou `MYSQL_PORT`, por exemplo:
-
-```powershell
-$env:API_PORT=8082
-$env:MYSQL_PORT=3308
-docker compose up --build
-```
+O backend usa a porta 8080. O MySQL do Compose é publicado em 3307, a Evolution em 8081; os bancos e o Redis da Evolution usam a rede interna do Docker. O Compose inicia os serviços necessários automaticamente. Se 8080 estiver ocupada, libere essa porta antes de iniciar.
 
 O Compose ativa o perfil `local`. O token fixo fica desabilitado; use JWT obtido no login. As credenciais do Compose sao apenas de desenvolvimento.
 
@@ -202,3 +200,10 @@ Filtros: PENDENTE, FALHA, COMUNICADO_PARCIAL ou COMUNICADO_NOS_DOIS.
 As comunicacoes mais recentes dos processos da pagina sao buscadas em lote.
 
 Veja [LOCAL.md](LOCAL.md) para iniciar, reutilizar a imagem e configurar o primeiro administrador.
+
+## WhatsApp integrado na inicializacao
+
+O Compose inicia a Evolution API e suas dependencias com `docker compose up -d`.
+O backend recebe URL/chave internamente e aguarda a Evolution ficar saudavel.
+Depois do login administrativo, gere o QR em Integracoes > WhatsApp e escaneie no
+telefone. Veja [LOCAL.md](LOCAL.md) para portas, persistencia e limites locais.

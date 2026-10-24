@@ -7,4 +7,5 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long>, org.spr
 	Optional<Usuario> findFirstByAtivoTrue();
     long countByTipoAndAtivoTrue(com.systemX.senai.enums.TipoUsuario tipo);
     boolean existsByTipo(com.systemX.senai.enums.TipoUsuario tipo);
+    java.util.List<Usuario> findByContaIdOrderByIdAsc(Long contaId);
 }

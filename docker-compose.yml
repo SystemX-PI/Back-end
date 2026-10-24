@@ -28,12 +28,95 @@ services:
       DEV_TOKEN_ENABLED: "false"
       INTEGRATION_API_KEY: integration-local-123
       MAIL_ENABLED: "false"
-      WHATSAPP_ENABLED: "false"
+      BILLING_SIMULATION_ENABLED: "true"
+      WHATSAPP_ENABLED: "true"
+      EVOLUTION_API_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-systemx-local-evolution-key-change-before-publishing}
+      EVOLUTION_INSTANCE: consorcio
     ports:
       - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
+      evolution:
+        condition: service_healthy
+
+  evolution-db:
+    image: postgres:15-alpine
+    pull_policy: missing
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:-systemx-local-postgres}
+    volumes:
+      - evolution-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  evolution-redis:
+    image: redis:7-alpine
+    pull_policy: missing
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - evolution-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    pull_policy: missing
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8080"
+      SERVER_URL: http://localhost:8081
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-systemx-local-evolution-key-change-before-publishing}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD:-systemx-local-postgres}@evolution-db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: systemx
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/0
+      CACHE_REDIS_PREFIX_KEY: systemx-evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      DEL_INSTANCE: "false"
+      TELEMETRY_ENABLED: "false"
+      LOG_LEVEL: ERROR,WARN,LOG
+      LOG_BAILEYS: error
+      NODE_OPTIONS: --max-old-space-size=512
+    ports:
+      - "127.0.0.1:${EVOLUTION_PORT:-8081}:8080"
+    volumes:
+      - evolution-instances:/evolution/instances
+    depends_on:
+      evolution-db:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/instance/fetchInstances', {headers: {apikey: process.env.AUTHENTICATION_API_KEY}, signal: AbortSignal.timeout(4000)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
 
 volumes:
   senai-mysql-data:
+  evolution-postgres-data:
+  evolution-redis-data:
+  evolution-instances:

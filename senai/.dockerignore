@@ -1,0 +1,7 @@
+target/
+.git/
+.gradle/
+.idea/
+.vscode/
+*.log
+application-local.properties

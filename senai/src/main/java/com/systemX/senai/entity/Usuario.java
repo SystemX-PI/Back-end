@@ -17,6 +17,10 @@ public class Usuario {
 
     private String telefone;
 
+    private Long contaId;
+    public Long getContaId() { return contaId; }
+    public void setContaId(Long contaId) { this.contaId = contaId; }
+
     @Column(nullable = false)
     private String senha;
 
