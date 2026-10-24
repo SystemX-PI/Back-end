@@ -27,7 +27,7 @@ public class EvolutionService {
             @Value("${app.evolution.url:http://localhost:8081}") String baseUrl,
             @Value("${app.evolution.api-key:}") String apiKey) {
         this.baseUrl = baseUrl.replaceAll("/+$", "");
-        this.restClient = RestClient.builder().baseUrl(this.baseUrl).build();
+        this.restClient = RestClient.builder().baseUrl(this.baseUrl).requestFactory(requestFactory()).build();
         this.apiKey = apiKey;
     }
 
@@ -165,5 +165,11 @@ public class EvolutionService {
 
     private EvolutionStatusResponse response(String name, String state, String code, String qr, String pairingCode) {
         return new EvolutionStatusResponse(name, state, code, qr, pairingCode);
+    }
+    private static org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory() {
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(3000);
+        factory.setReadTimeout(10000);
+        return factory;
     }
 }

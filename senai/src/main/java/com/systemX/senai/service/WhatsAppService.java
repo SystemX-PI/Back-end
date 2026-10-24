@@ -20,7 +20,7 @@ public class WhatsAppService {
             @Value("${app.whatsapp.api-url:http://localhost:8081}") String apiUrl,
             @Value("${app.whatsapp.api-key:}") String apiKey,
             @Value("${app.whatsapp.instance:consorcio}") String instance) {
-        this.restClient = RestClient.builder().baseUrl(apiUrl).build();
+        this.restClient = RestClient.builder().baseUrl(apiUrl).requestFactory(requestFactory()).build();
         this.enabled = enabled;
         this.apiKey = apiKey;
         this.instance = instance;
@@ -53,5 +53,11 @@ public class WhatsAppService {
             throw new IllegalStateException("Falha ao enviar mensagem pela Evolution API: "
                     + exception.getMessage(), exception);
         }
+    }
+    private static org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory() {
+        var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(3000);
+        factory.setReadTimeout(10000);
+        return factory;
     }
 }

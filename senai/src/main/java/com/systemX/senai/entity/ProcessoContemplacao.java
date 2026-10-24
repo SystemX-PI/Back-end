@@ -13,6 +13,10 @@ public class ProcessoContemplacao {
     @Enumerated(EnumType.STRING) @Column(nullable = false) private StatusProcesso status;
     @Column private String idExterno;
     private String origem;
+    @ManyToOne(fetch = FetchType.LAZY) private Usuario cliente;
+    public Usuario getCliente() { return cliente; }
+    public void setCliente(Usuario cliente) { this.cliente = cliente; }
+
     @Builder.Default private LocalDateTime criadoEm = LocalDateTime.now();
     private LocalDateTime atualizadoEm;
 

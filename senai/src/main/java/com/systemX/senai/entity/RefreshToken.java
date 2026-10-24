@@ -13,6 +13,10 @@ import jakarta.persistence.ManyToOne;
 
 @Entity
 public class RefreshToken {
+    @jakarta.persistence.Column(nullable = false)
+    private int versaoAutenticacao;
+    public int getVersaoAutenticacao() { return versaoAutenticacao; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -37,6 +41,7 @@ public class RefreshToken {
         this.tokenHash = tokenHash;
         this.expiresAt = expiresAt;
         this.usuario = usuario;
+        this.versaoAutenticacao = usuario.getVersaoAutenticacao();
     }
 
     public String getTokenHash() { return tokenHash; }

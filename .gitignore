@@ -1,1 +1,7 @@
 /.metadata/
+
+# Local machine resource limits
+docker-compose.override.yml
+
+# Credenciais particulares do ambiente local
+/.env

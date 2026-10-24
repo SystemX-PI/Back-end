@@ -21,7 +21,7 @@ public class JwtService {
     private final long expirationSeconds;
 
     public JwtService(
-            @Value("${app.jwt.secret:change-this-secret-with-at-least-32-characters}") String secret,
+            @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.expiration-seconds:900}") long expirationSeconds) {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationSeconds = expirationSeconds;
@@ -32,6 +32,8 @@ public class JwtService {
         return Jwts.builder()
                 .subject(usuario.getEmail())
                 .claim("tipo", usuario.getTipo().name())
+                .claim("uid", usuario.getId())
+                .claim("av", usuario.getVersaoAutenticacao())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(expirationSeconds)))
                 .signWith(key)

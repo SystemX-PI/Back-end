@@ -38,6 +38,9 @@ public class EmailService {
         }
 
         Properties properties = new Properties();
+        properties.put("mail.smtp.connectiontimeout", "3000");
+        properties.put("mail.smtp.timeout", "10000");
+        properties.put("mail.smtp.writetimeout", "10000");
         properties.put("mail.smtp.host", "smtp.gmail.com");
         properties.put("mail.smtp.port", "465");
         properties.put("mail.smtp.auth", "true");

@@ -22,7 +22,7 @@ API REST para gerenciamento de consorcios, cotas, usuarios e processos de contem
 
 ## Inicializacao rapida com Docker
 
-Depois de clonar o repositorio e iniciar o Docker Desktop, execute na raiz:
+Depois de clonar o repositorio e iniciar o Docker Desktop, execute na pasta `Back-end`:
 
 ```powershell
 docker compose up --build
@@ -40,7 +40,7 @@ $env:MYSQL_PORT=3308
 docker compose up --build
 ```
 
-O token `token-local-123` e as credenciais do banco no Compose sao somente para desenvolvimento local. Nao os reutilize em producao.
+O Compose ativa o perfil `local`. O token fixo fica desabilitado; use JWT obtido no login. As credenciais do Compose sao apenas de desenvolvimento.
 
 ## Configuracao do banco manual
 
@@ -172,3 +172,33 @@ O token universal de desenvolvimento existe apenas para testes locais. Ele deve 
 | GET | `/api/integracoes/processos/{id}/baixa` | Consultar baixa |
 
 O passo a passo completo dessa integração, configuração do Gmail e testes no Postman está em [senai/GUIA_TESTES_POSTMAN.md](senai/GUIA_TESTES_POSTMAN.md).
+
+## CRUD e permissoes atuais
+
+- Cadastro publico: `POST /api/auth/register` recebe `nome`, `email`, `senha` e cria somente CLIENTE.
+- `POST /api/usuarios` cria contas administrativas ou clientes e exige ADMINISTRADOR.
+- Usuarios: somente ADMINISTRADOR consulta, cria, edita, troca senha ou exclui.
+- Consorcios, grupos, cotas e tipos: ADMINISTRADOR altera; FUNCIONARIO pode consultar.
+- Clientes: ADMINISTRADOR/FUNCIONARIO consultam `GET /api/clientes/pagina`.
+- Portal: CLIENTE consulta somente seus processos em `GET /api/portal/processos` e `GET /api/portal/processos/{id}`.
+
+Os cinco cadastros oferecem POST/GET na raiz e GET/PUT/DELETE em `/{id}`.
+Para listar sem baixar toda a tabela, use `GET /api/{recurso}/pagina?page=0&size=20&q=busca`.
+A resposta e `{items,total,page,size}`, com tamanho de 1 a 100 e pagina iniciando em zero.
+Listas legadas na raiz retornam no maximo os 100 registros mais recentes.
+
+PUT de usuario recebe `nome`, `email`, `tipo`, `ativo`, sem senha.
+Para trocar a senha, use `PUT /api/usuarios/{id}/senha` com `{ "senha": "nova-senha" }`.
+Mudancas de e-mail, perfil, estado ativo ou senha invalidam sessoes anteriores.
+O ultimo administrador ativo nao pode ser removido ou desativado.
+
+Grupos recebem `numero`, `consorcioId`, `quantidadeCotas` (opcional, inteiro positivo)
+e `valorParcela` (opcional, positivo). Tipos recebem `nome`.
+Crie tipo, consorcio, grupo e cota nessa ordem. Exclua dependencias antes dos pais.
+IDs inexistentes retornam 404; entrada invalida, 400; duplicidade/vinculos, 409.
+
+A fila paginada usa `GET /api/integracoes/comunicacoes/fila/pagina?page=0&size=20&q=&status=`.
+Filtros: PENDENTE, FALHA, COMUNICADO_PARCIAL ou COMUNICADO_NOS_DOIS.
+As comunicacoes mais recentes dos processos da pagina sao buscadas em lote.
+
+Veja [LOCAL.md](LOCAL.md) para iniciar, reutilizar a imagem e configurar o primeiro administrador.

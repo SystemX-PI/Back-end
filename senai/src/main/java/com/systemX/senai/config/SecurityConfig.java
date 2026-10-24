@@ -25,10 +25,16 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/api/auth/**").permitAll()
-                    .requestMatchers(HttpMethod.POST, "/api/usuarios").permitAll()
+                    .requestMatchers("/api/portal/**").hasRole("CLIENTE")
                     .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
                     .requestMatchers("/api/configuracoes/**", "/api/integracoes/whatsapp/**").hasRole("ADMINISTRADOR")
                     .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+                    .requestMatchers("/api/usuarios", "/api/usuarios/**").hasRole("ADMINISTRADOR")
+                    .requestMatchers(HttpMethod.GET, "/api/consorcios/**", "/api/cotas/**", "/api/grupos/**", "/api/tipos-consorcio/**")
+                        .hasAnyRole("ADMINISTRADOR", "FUNCIONARIO")
+                    .requestMatchers("/api/consorcios/**", "/api/cotas/**", "/api/grupos/**", "/api/tipos-consorcio/**")
+                        .hasRole("ADMINISTRADOR")
+                    .requestMatchers("/api/**").hasAnyRole("ADMINISTRADOR", "FUNCIONARIO")
                     .anyRequest().authenticated())                    .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> response.sendError(401)))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);

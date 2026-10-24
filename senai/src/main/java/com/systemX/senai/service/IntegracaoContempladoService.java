@@ -106,6 +106,7 @@ public class IntegracaoContempladoService {
         processo.setIdExterno(request.idExterno());
         processo.setOrigem(request.origem());
         processo.setContemplacao(contemplacao);
+        processo.setCliente(cliente);
         processo.setResponsavel(responsavel);
         processo.setStatus(StatusProcesso.AGUARDANDO_COMUNICACAO);
         processo.setAtualizadoEm(LocalDateTime.now());
@@ -133,22 +134,21 @@ public class IntegracaoContempladoService {
     }
 
     @Transactional(readOnly = true)
-    public List<FilaComunicacaoResponse> listarFila() {
-        return processoRepository.findAllByOrderByCriadoEmDesc().stream()
-                .map(processo -> {
-                    Comunicacao email = comunicacaoRepository
-                            .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.EMAIL)
-                            .orElse(null);
-                    Comunicacao whatsapp = comunicacaoRepository
-                            .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.WHATSAPP)
-                            .orElse(null);
-                    return new FilaComunicacaoResponse(
-                            processo.getId(), processo.getOrigem(), processo.getIdExterno(),
-                            processo.getStatus().name(), processo.getCriadoEm(),
-                            toResponse(processo.getId(), email, whatsapp));
-                })
-                .filter(item -> item.comunicacao().email() != null || item.comunicacao().whatsapp() != null)
-                .toList();
+    public List<FilaComunicacaoResponse> listarFila() { return listarFilaPagina(0, 100, "", "").items(); }
+
+    @Transactional(readOnly = true)
+    public com.systemX.senai.dto.PaginaResponse<FilaComunicacaoResponse> listarFilaPagina(int page, int size, String q, String status) {
+        var processos = processoRepository.findAll(FilaFiltro.criar(q, status), Paginacao.pagina(page, size));
+        var ids = processos.getContent().stream().map(ProcessoContemplacao::getId).toList();
+        var canais = ids.isEmpty() ? List.<Comunicacao>of() : comunicacaoRepository.buscarUltimasEmLote(ids);
+        var porProcesso = canais.stream().collect(java.util.stream.Collectors.groupingBy(c -> c.getProcesso().getId()));
+        return com.systemX.senai.dto.PaginaResponse.from(processos.map(processo -> {
+            var registros = porProcesso.getOrDefault(processo.getId(), List.of());
+            Comunicacao email = registros.stream().filter(c -> c.getCanal() == CanalComunicacao.EMAIL).findFirst().orElse(null);
+            Comunicacao whatsapp = registros.stream().filter(c -> c.getCanal() == CanalComunicacao.WHATSAPP).findFirst().orElse(null);
+            return new FilaComunicacaoResponse(processo.getId(), processo.getOrigem(), processo.getIdExterno(),
+                processo.getStatus().name(), processo.getCriadoEm(), toResponse(processo.getId(), email, whatsapp));
+        }));
     }
 
     @Transactional

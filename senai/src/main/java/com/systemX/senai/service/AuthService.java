@@ -59,6 +59,7 @@ public class AuthService {
                 .filter(token -> !token.isRevoked())
                 .filter(token -> token.getExpiresAt().isAfter(Instant.now()))
                 .filter(token -> token.getUsuario().isAtivo())
+                .filter(token -> token.getVersaoAutenticacao() == token.getUsuario().getVersaoAutenticacao())
                 .orElseThrow(InvalidCredentialsException::new);
         refreshToken.revoke();
         return issueTokens(refreshToken.getUsuario());

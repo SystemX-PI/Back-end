@@ -18,9 +18,17 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthService service;
+    private final com.systemX.senai.service.UsuarioService usuarios;
 
-    public AuthController(AuthService service) {
+    public AuthController(AuthService service, com.systemX.senai.service.UsuarioService usuarios) {
         this.service = service;
+        this.usuarios = usuarios;
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<com.systemX.senai.dto.UsuarioResponse> registrar(
+            @Valid @RequestBody com.systemX.senai.dto.RegistroRequest request) {
+        return ResponseEntity.status(201).body(usuarios.registrar(request));
     }
 
     @PostMapping("/login")

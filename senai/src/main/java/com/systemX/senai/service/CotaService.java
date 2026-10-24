@@ -14,6 +14,7 @@ import com.systemX.senai.repository.CotaRepository;
 import com.systemX.senai.repository.GrupoRepository;
 
 @Service
+@Transactional
 public class CotaService {
     private final CotaRepository repository;
     private final GrupoRepository grupoRepository;
@@ -30,6 +31,21 @@ public class CotaService {
         return toResponse(repository.save(cota));
     }
     @Transactional(readOnly = true)
-    public List<CotaResponse> listar() { return repository.findAll().stream().map(this::toResponse).toList(); }
+    public List<CotaResponse> listar() { return repository.findAll(Paginacao.pagina(0, 100)).stream().map(this::toResponse).toList(); }
+    @Transactional(readOnly = true)
+    public CotaResponse consultar(Long id) { return toResponse(buscar(id)); }
+    public CotaResponse atualizar(Long id, CotaRequest request) {
+        Cota item = buscar(id);
+        item.setNumero(request.numero());
+        item.setGrupo(grupoRepository.findById(request.grupoId()).orElseThrow(() -> new ResourceNotFoundException("Grupo nao encontrado: " + request.grupoId())));
+        item.setValorCredito(request.valorCredito());
+        return toResponse(repository.save(item));
+    }
+    public void excluir(Long id) { repository.delete(buscar(id)); repository.flush(); }
+    private Cota buscar(Long id) { return repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Cota nao encontrado: " + id)); }
+    @Transactional(readOnly = true)
+    public com.systemX.senai.dto.PaginaResponse<CotaResponse> listarPagina(int page, int size, String q) {
+        return com.systemX.senai.dto.PaginaResponse.from(repository.findAll(Paginacao.<Cota>busca(q, "numero"), Paginacao.pagina(page, size)).map(this::toResponse));
+    }
     private CotaResponse toResponse(Cota item) { return new CotaResponse(item.getId(), item.getNumero(), item.getGrupo().getId(), item.getGrupo().getNumero(), item.getValorCredito(), item.isAtiva()); }
 }

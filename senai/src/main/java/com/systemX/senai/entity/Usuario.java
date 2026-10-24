@@ -25,6 +25,13 @@ public class Usuario {
 
     private boolean ativo = true;
 
+    @Column(nullable = false)
+    private int versaoAutenticacao = 0;
+
+    public int getVersaoAutenticacao() { return versaoAutenticacao; }
+    public void invalidarSessoes() { versaoAutenticacao++; }
+
+
     public Usuario() {
     }
 

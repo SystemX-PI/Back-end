@@ -32,7 +32,7 @@ public class IntegracaoController {
     private final String integrationKey;
 
     public IntegracaoController(IntegracaoContempladoService integracaoService, BaixaService baixaService,
-            @Value("${app.integration.api-key:integration-local-123}") String integrationKey) {
+            @Value("${app.integration.api-key:}") String integrationKey) {
         this.integracaoService = integracaoService;
         this.baixaService = baixaService;
         this.integrationKey = integrationKey;
@@ -53,6 +53,15 @@ public class IntegracaoController {
     @GetMapping("/comunicacoes/fila")
     public List<FilaComunicacaoResponse> fila() {
         return integracaoService.listarFila();
+    }
+
+    @GetMapping("/comunicacoes/fila/pagina")
+    public com.systemX.senai.dto.PaginaResponse<FilaComunicacaoResponse> filaPagina(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="20") int size,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="") String q,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="") String status) {
+        return integracaoService.listarFilaPagina(page, size, q, status);
     }
 
     @PostMapping("/processos/{processoId}/comunicacao/reenvio")

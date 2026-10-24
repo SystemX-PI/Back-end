@@ -1,3 +1,10 @@
+> Atualizacao do contrato (23/10/2026): cadastro publico agora usa POST /api/auth/register
+> e cria apenas CLIENTE. POST /api/usuarios exige JWT de ADMINISTRADOR. O token fixo
+> esta desabilitado. Para editar usuario, envie nome, email, tipo e ativo; a senha
+> e alterada separadamente em PUT /api/usuarios/{id}/senha. Para listas completas,
+> use os endpoints /pagina descritos no README. Os exemplos antigos de cadastro
+> administrativo sem JWT devem ser substituidos por login de administrador.
+
 # Guia de testes no Postman
 
 Este documento descreve como testar a API do backend do projeto pelo Postman e resume o que foi implementado.

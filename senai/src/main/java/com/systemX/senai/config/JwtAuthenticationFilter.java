@@ -32,10 +32,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             JwtService jwtService,
             UsuarioRepository usuarioRepository,
             @Value("${app.security.dev-token-enabled:false}") boolean devTokenEnabled,
-            @Value("${app.security.dev-token:}") String devToken) {
+            @Value("${app.security.dev-token:}") String devToken,
+            org.springframework.core.env.Environment environment) {
         this.jwtService = jwtService;
         this.usuarioRepository = usuarioRepository;
-        this.devTokenEnabled = devTokenEnabled;
+        this.devTokenEnabled = devTokenEnabled && environment.acceptsProfiles(org.springframework.core.env.Profiles.of("local"));
         this.devToken = devToken;
     }
 
@@ -54,8 +55,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
             try {
                 Claims claims = jwtService.parse(token);
-                Usuario usuario = usuarioRepository.findByEmail(claims.getSubject()).orElse(null);
-                if (usuario != null && usuario.isAtivo()) {
+                Number uid = claims.get("uid", Number.class);
+                Number version = claims.get("av", Number.class);
+                Usuario usuario = uid == null ? null : usuarioRepository.findById(uid.longValue()).orElse(null);
+                if (usuario != null && usuario.isAtivo() && version != null && version.intValue() == usuario.getVersaoAutenticacao()) {
                     var authorities = java.util.List.of(new SimpleGrantedAuthority("ROLE_" + usuario.getTipo().name()));
                     var authentication = new UsernamePasswordAuthenticationToken(usuario.getEmail(), null, authorities);
                     SecurityContextHolder.getContext().setAuthentication(authentication);

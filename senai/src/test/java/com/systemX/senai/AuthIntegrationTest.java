@@ -67,6 +67,9 @@ class AuthIntegrationTest {
     @Autowired
     private AssembleiaRepository assembleiaRepository;
 
+    @org.junit.jupiter.api.AfterEach
+    void limparConfiguracaoEmail() { emailService.configure("", ""); }
+
     @Test
     void shouldAuthenticateAndReturnJwt() throws Exception {
         Usuario usuario = new Usuario();
@@ -84,6 +87,25 @@ class AuthIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").exists())
                 .andExpect(jsonPath("$.tipo").value("ADMINISTRADOR"));
+        mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"ana@teste.com\",\"senha\":\"errada\"}"))
+                .andExpect(status().isUnauthorized());
+        String login = mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content(payload))
+                .andReturn().getResponse().getContentAsString();
+        String refresh = com.jayway.jsonpath.JsonPath.read(login, "$.refreshToken");
+        String rotated = mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\":\"" + refresh + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\":\"" + refresh + "\"}"))
+                .andExpect(status().isUnauthorized());
+        String next = com.jayway.jsonpath.JsonPath.read(rotated, "$.refreshToken");
+        mockMvc.perform(post("/api/auth/logout").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\":\"" + next + "\"}"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\":\"" + next + "\"}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -104,6 +126,13 @@ class AuthIntegrationTest {
 
     @Test
     void shouldRequireAuthenticationToConfigureEmail() throws Exception {
+        mockMvc.perform(post("/api/usuarios").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"nome\":\"Publico\",\"email\":\"publico@teste.com\",\"senha\":\"123456\",\"tipo\":\"ADMINISTRADOR\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"nome\":\"Cliente publico\",\"email\":\"publico@teste.com\",\"senha\":\"123456\",\"tipo\":\"ADMINISTRADOR\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.tipo").value("CLIENTE"))
+                .andExpect(jsonPath("$.senha").doesNotExist());
         mockMvc.perform(put("/api/configuracoes/email")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"remetente@gmail.com\",\"senhaAplicativo\":\"abcd efgh ijkl mnop\"}"))
@@ -113,6 +142,17 @@ class AuthIntegrationTest {
     @Test
     void shouldRequireAdministratorRoleToConfigureEmail() throws Exception {
         Usuario cliente = criarUsuario("cliente-email@teste.com", TipoUsuario.CLIENTE);
+        String tokenCliente = "Bearer " + jwtService.generate(cliente);
+        for (String path : java.util.List.of("/api/usuarios", "/api/consorcios", "/api/grupos/pagina", "/api/cotas")) {
+            mockMvc.perform(get(path).header("Authorization", tokenCliente)).andExpect(status().isForbidden());
+        }
+        Usuario funcionario = criarUsuario("funcionario-permissoes@teste.com", TipoUsuario.FUNCIONARIO);
+        String tokenFuncionario = "Bearer " + jwtService.generate(funcionario);
+        mockMvc.perform(get("/api/consorcios/pagina").header("Authorization", tokenFuncionario)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/clientes/pagina").header("Authorization", tokenFuncionario)).andExpect(status().isOk());
+        mockMvc.perform(post("/api/consorcios").header("Authorization", tokenFuncionario)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"nome\":\"Negado\",\"tipoId\":1}"))
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(put("/api/configuracoes/email")
             .header("Authorization", "Bearer " + jwtService.generate(cliente))
@@ -176,6 +216,21 @@ class AuthIntegrationTest {
         Number processoIdValue = com.jayway.jsonpath.JsonPath.read(response, "$.processoId");
         long processoId = processoIdValue.longValue();
         String token = jwtService.generate(admin);
+        Usuario clientePortal = usuarioRepository.findByEmail("maria-fila@teste.com").orElseThrow();
+        String portalToken = "Bearer " + jwtService.generate(clientePortal);
+        mockMvc.perform(get("/api/portal/processos").header("Authorization", portalToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value(processoId));
+        mockMvc.perform(get("/api/portal/processos/" + processoId).header("Authorization", portalToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cota").value("COTA-FILA"));
+        Usuario outro = criarUsuario("outro-cliente-portal@teste.com", TipoUsuario.CLIENTE);
+        mockMvc.perform(get("/api/portal/processos/" + processoId).header("Authorization", "Bearer " + jwtService.generate(outro)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/integracoes/comunicacoes/fila/pagina?page=0&size=1&q=CONT-FILA&status=PENDENTE")
+                .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].processoId").value(processoId));
+        mockMvc.perform(get("/api/integracoes/comunicacoes/fila/pagina?size=101").header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest());
 
         mockMvc.perform(get("/api/integracoes/comunicacoes/fila")
                 .header("Authorization", "Bearer " + token))

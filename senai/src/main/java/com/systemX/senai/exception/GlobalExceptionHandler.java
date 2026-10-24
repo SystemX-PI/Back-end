@@ -34,6 +34,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(new ApiError(400, message));
     }
 
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    ResponseEntity<ApiError> conflict(org.springframework.dao.DataIntegrityViolationException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError(409,
+                "Operacao em conflito: verifique valores duplicados ou registros vinculados."));
+    }
+
     public record ApiError(int status, String message, LocalDateTime timestamp) {
         ApiError(int status, String message) { this(status, message, LocalDateTime.now()); }
     }
