@@ -18,10 +18,12 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthService service;
+    private final com.systemX.senai.service.PasswordResetService recovery;
     private final com.systemX.senai.service.UsuarioService usuarios;
 
-    public AuthController(AuthService service, com.systemX.senai.service.UsuarioService usuarios) {
+    public AuthController(AuthService service, com.systemX.senai.service.UsuarioService usuarios,com.systemX.senai.service.PasswordResetService recovery) {
         this.service = service;
+        this.recovery = recovery;
         this.usuarios = usuarios;
     }
 
@@ -45,5 +47,14 @@ public class AuthController {
     public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
         service.logout(request.refreshToken());
         return ResponseEntity.noContent().build();
+    }
+    public record ForgotPassword(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Email @jakarta.validation.constraints.Size(max=255) String email) {}
+    public record ResetPassword(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Email @jakarta.validation.constraints.Size(max=255) String email,@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Pattern(regexp="[0-9]{8}") String token,@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(min=10,max=72) String newPassword) {}
+    @PostMapping("/forgot-password") public Object forgot(@Valid @RequestBody ForgotPassword body,jakarta.servlet.http.HttpServletRequest request) {
+        recovery.request(body.email(),request.getRemoteAddr());
+        return java.util.Map.of("message","Se este e-mail estiver cadastrado, você receberá um código de recuperação.","expiresIn",300);
+    }
+    @PostMapping("/reset-password") public ResponseEntity<Void> reset(@Valid @RequestBody ResetPassword body) {
+        recovery.reset(body.email(),body.token(),body.newPassword());return ResponseEntity.noContent().build();
     }
 }

@@ -64,7 +64,7 @@ public class PlatformService {
  @Transactional public UsuarioResponse createClient(String name,String email,String password) { admin(); return signup(name,email,password); }
  public Map<String,Object> context(Long id) {
   var u=currentUser(); var map=new LinkedHashMap<String,Object>();
-  map.put("role",u.getTipo()); map.put("name",u.getNome()); map.put("email",u.getEmail()); map.put("simulationEnabled",simulation);
+  map.put("role",u.getTipo()); map.put("photo",u.getFoto()); map.put("name",u.getNome()); map.put("email",u.getEmail()); map.put("simulationEnabled",simulation);
   if(u.getTipo()==TipoUsuario.ADMINISTRADOR && id==null) { map.put("account",null); return map; }
   var a=account(id); map.put("subscription",plans.view(a)); map.put("account",a); map.put("active",active(a));
   map.put("instances",instances.findByContaIdOrderByIdAsc(a.getId()).stream().map(this::instanceView).toList());

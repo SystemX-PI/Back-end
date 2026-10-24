@@ -27,7 +27,9 @@ services:
       LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-}
       DEV_TOKEN_ENABLED: "false"
       INTEGRATION_API_KEY: integration-local-123
-      MAIL_ENABLED: "false"
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       BILLING_SIMULATION_ENABLED: "true"
       WHATSAPP_ENABLED: "true"
       EVOLUTION_API_URL: http://evolution:8080

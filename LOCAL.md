@@ -22,7 +22,7 @@ Swagger: http://localhost:8080/swagger-ui/index.html
 O frontend usa /api pelo proxy do Vite para localhost:8080. Reinicie npm run dev
 apos mudar configuracoes. A porta 8080 precisa estar livre.
 
-O Dockerfile executa os 11 testes essenciais durante a construcao. Nao ha
+O Dockerfile executa os 15 testes essenciais durante a construcao. Nao ha
 skipTests. O cache do BuildKit guarda as dependencias Maven entre construcoes;
 novas dependencias ainda precisam ser baixadas. Nao use --no-cache nem apague o
 cache do Docker no fluxo normal. Sem mudancas, a camada validada e reutilizada.
@@ -119,3 +119,23 @@ docker compose logs --tail=60 evolution
 
 Referencia da composicao do fornecedor:
 https://github.com/evolution-foundation/evolution-api/blob/2.3.7/docker-compose.yaml
+
+## Gmail para recuperação de senha
+
+Configure um remetente da plataforma no arquivo local ignorado `Back-end/.env`:
+
+```dotenv
+MAIL_ENABLED=true
+MAIL_USERNAME=seu-remetente@gmail.com
+MAIL_PASSWORD=sua-senha-de-aplicativo-do-google
+```
+
+Use uma senha de aplicativo do Google. Não coloque as credenciais no frontend nem no Git. As contas Gmail cadastradas pelos clientes não são usadas automaticamente para recuperar senhas da plataforma.
+
+Na pasta Back-end, aplique a configuração sem recompilar:
+
+```powershell
+docker compose up -d --no-deps backend
+```
+
+No login, escolha “Esqueci minha senha”. O código recebido por e-mail expira em cinco minutos, aceita no máximo cinco tentativas e não pode ser reutilizado. Sem remetente configurado, a tela informa a indisponibilidade do envio.

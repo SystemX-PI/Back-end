@@ -17,6 +17,11 @@ public class Usuario {
 
     private String telefone;
 
+    @Lob @Column(columnDefinition = "LONGTEXT")
+    private String foto;
+    public String getFoto() { return foto; }
+    public void setFoto(String foto) { this.foto = foto; }
+
     private Long contaId;
     public Long getContaId() { return contaId; }
     public void setContaId(Long contaId) { this.contaId = contaId; }

@@ -7,8 +7,9 @@ import jakarta.validation.constraints.*;
 @RestController @RequestMapping("/api/platform")
 public class PlatformController {
  private final PlatformService service;
+ private final com.systemX.senai.service.ProfileService profile;
  private final com.systemX.senai.service.PlatformCheckoutService checkout;
- public PlatformController(PlatformService service,com.systemX.senai.service.PlatformCheckoutService checkout) { this.service=service; this.checkout=checkout; }
+ public PlatformController(PlatformService service,com.systemX.senai.service.PlatformCheckoutService checkout,com.systemX.senai.service.ProfileService profile) { this.service=service; this.checkout=checkout; this.profile=profile; }
  public record Person(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(min=6,max=100) String password) {}
  public record Instance(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,60}") String name) {}
  public record Mailbox(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(max=200) String password) {}
@@ -31,4 +32,8 @@ public class PlatformController {
  public record Checkout(@NotBlank @Pattern(regexp="PIX|CARD") String paymentMethod) {}
  @PostMapping("/subscription/checkout") @ResponseStatus(HttpStatus.CREATED) public Object checkout(@RequestParam(required=false) Long accountId,@Valid @RequestBody Checkout p) { return checkout.create(accountId,p.paymentMethod()); }
  @PostMapping("/subscription/checkout/{id}/confirm") public Object confirm(@RequestParam(required=false) Long accountId,@PathVariable String id) { return checkout.confirm(accountId,id); }
+ public record Profile(@NotBlank @Size(max=120) String name,@Size(max=400000) String photo) {}
+ public record PasswordChange(@NotBlank @Size(max=100) String currentPassword,@NotBlank @Size(min=10,max=72) String newPassword) {}
+ @PutMapping("/profile") @ResponseStatus(HttpStatus.NO_CONTENT) public void updateProfile(@Valid @RequestBody Profile p) { profile.update(p.name(),p.photo()); }
+ @PutMapping("/profile/password") public Object password(@Valid @RequestBody PasswordChange p) { return profile.changePassword(p.currentPassword(),p.newPassword()); }
 }
