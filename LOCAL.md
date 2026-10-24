@@ -1,5 +1,55 @@
 # Execucao local
 
+## Subir o projeto completo com Docker
+
+Requer apenas Docker Desktop com Compose v2; Node, Java e Maven não precisam estar instalados na máquina.
+Clone os dois repositórios na mesma pasta, com estes nomes:
+
+```text
+projeto/
+  Back-end/
+  Front-End/
+```
+
+```powershell
+git clone https://github.com/SystemX-PI/Back-end.git
+git clone https://github.com/SystemX-PI/Front-End.git
+cd Back-end
+docker compose --profile full up --build -d --wait --wait-timeout 600
+```
+
+Ou, na pasta `Back-end`, execute `./start.ps1` no PowerShell. O script também funciona quando chamado de outra pasta.
+No Windows, se a política local bloquear scripts, use o comando Docker acima.
+
+- Site: http://localhost:5173
+- Backend e Swagger: http://localhost:8080/swagger-ui/index.html
+- MySQL para DBeaver: localhost:3307, banco `senai`, usuário `root`, senha `root` (desenvolvimento).
+- Evolution API: localhost:8081. O backend acessa a Evolution pela rede Docker.
+
+O comando aguarda os serviços ficarem saudáveis. O frontend é compilado e servido pelo Nginx; `/api` é encaminhado internamente ao backend em 8080. Rotas como `/app/perfil` funcionam também ao atualizar a página. Não é necessário configurar CORS ou instalar dependências no computador.
+
+Para receber mudanças, atualize **os dois repositórios** e reconstrua:
+
+```powershell
+# Partindo da pasta Back-end
+git pull --ff-only
+git -C ../Front-End pull --ff-only
+docker compose --profile full up --build -d --wait --wait-timeout 600
+```
+
+Para apenas ligar novamente, sem mudança no código, use `docker compose --profile full up -d --wait --wait-timeout 600`. Para parar, `docker compose --profile full down` preserva os volumes e os dados.
+
+O primeiro build baixa o que estiver faltando. Os seguintes reutilizam imagens, camadas e caches npm/Maven; dependências só mudam quando os respectivos arquivos de versão mudam. Não use `--no-cache` nem limpe os volumes no fluxo normal. O build da API mantém os 15 testes existentes; o frontend faz a compilação TypeScript/Vite, sem iniciar testes de navegador.
+
+As imagens são construídas **na máquina de cada colega** a partir do Git atualizado. Fazer push no GitHub não publica automaticamente imagens em um registro Docker.
+
+O cadastro público cria uma conta de cliente. Para criar um administrador local, copie `.env.example` para `.env` **somente se ainda não existir** e preencha `LOCAL_ADMIN_EMAIL` e `LOCAL_ADMIN_PASSWORD` (mínimo 10 caracteres). Reinicie o backend para aplicar. Senhas reais e `.env` não devem ser commitados. Recuperação por e-mail exige `MAIL_ENABLED`, `MAIL_USERNAME` e `MAIL_PASSWORD`; o restante funciona sem remetente configurado.
+
+A configuração padrão permite a primeira subida sem `.env`; os valores de desenvolvimento não servem para produção. QR Code ainda exige confirmação no aparelho. Pagamentos permanecem simulados.
+
+Para diagnosticar: `docker compose --profile full ps` e `docker compose --profile full logs --tail=80`. Se 5173 ou 8080 estiverem ocupadas por processos locais, pare esses processos antes de subir. O perfil `full` substitui a necessidade de iniciar `npm run dev` ou o Compose separado do frontend.
+
+
 Na pasta Back-end, primeira execucao ou depois de mudar codigo:
 
 ```powershell

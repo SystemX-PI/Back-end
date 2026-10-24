@@ -1,6 +1,8 @@
 services:
   db:
     image: mysql:8.0
+    pull_policy: missing
+    restart: unless-stopped
     environment:
       MYSQL_DATABASE: senai
       MYSQL_ROOT_PASSWORD: root
@@ -15,6 +17,7 @@ services:
       retries: 20
 
   backend:
+    restart: unless-stopped
     build:
       context: ./senai
     environment:
@@ -35,6 +38,12 @@ services:
       EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-systemx-local-evolution-key-change-before-publishing}
       EVOLUTION_INSTANCE: consorcio
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "4", "http://127.0.0.1:8080/v3/api-docs"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
     ports:
       - "8080:8080"
     depends_on:
@@ -116,6 +125,21 @@ services:
       timeout: 5s
       retries: 20
       start_period: 60s
+
+  frontend:
+    profiles: [full]
+    build:
+      context: ../Front-End
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    environment:
+      API_UPSTREAM: http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    cpus: 0.5
+    mem_limit: 128m
 
 volumes:
   senai-mysql-data:
