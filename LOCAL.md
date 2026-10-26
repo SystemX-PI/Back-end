@@ -39,13 +39,13 @@ docker compose --profile full up --build -d --wait --wait-timeout 600
 
 Para apenas ligar novamente, sem mudança no código, use `docker compose --profile full up -d --wait --wait-timeout 600`. Para parar, `docker compose --profile full down` preserva os volumes e os dados.
 
-O primeiro build baixa o que estiver faltando. Os seguintes reutilizam imagens, camadas e caches npm/Maven; dependências só mudam quando os respectivos arquivos de versão mudam. Não use `--no-cache` nem limpe os volumes no fluxo normal. O build da API mantém os 15 testes existentes; o frontend faz a compilação TypeScript/Vite, sem iniciar testes de navegador.
+O primeiro build baixa o que estiver faltando. Os seguintes reutilizam imagens, camadas e caches npm/Maven; dependências só mudam quando os respectivos arquivos de versão mudam. Não use `--no-cache` nem limpe os volumes no fluxo normal. O build da API executa os testes de integração do backend; o frontend faz a compilação TypeScript/Vite, sem iniciar testes de navegador.
 
 As imagens são construídas **na máquina de cada colega** a partir do Git atualizado. Fazer push no GitHub não publica automaticamente imagens em um registro Docker.
 
 O cadastro público cria uma conta de cliente. Para criar um administrador local, copie `.env.example` para `.env` **somente se ainda não existir** e preencha `LOCAL_ADMIN_EMAIL` e `LOCAL_ADMIN_PASSWORD` (mínimo 10 caracteres). Reinicie o backend para aplicar. Senhas reais e `.env` não devem ser commitados. Recuperação por e-mail exige `MAIL_ENABLED`, `MAIL_USERNAME` e `MAIL_PASSWORD`; o restante funciona sem remetente configurado.
 
-A configuração padrão permite a primeira subida sem `.env`; os valores de desenvolvimento não servem para produção. QR Code ainda exige confirmação no aparelho. Pagamentos permanecem simulados.
+A configuração padrão permite a primeira subida sem `.env`; os valores de desenvolvimento não servem para produção. QR Code ainda exige confirmação no aparelho. O checkout simulado permanece disponível; o Stripe só é habilitado quando configurado explicitamente.
 
 Para diagnosticar: `docker compose --profile full ps` e `docker compose --profile full logs --tail=80`. Se 5173 ou 8080 estiverem ocupadas por processos locais, pare esses processos antes de subir. O perfil `full` substitui a necessidade de iniciar `npm run dev` ou o Compose separado do frontend.
 
@@ -155,6 +155,44 @@ Os dados de instancia, PostgreSQL e Redis ficam em volumes persistentes. Nao use
 `docker compose down -v` se quiser preservar dados e pareamentos.
 A configuracao reduz a persistencia de mensagens/contatos/historico da Evolution;
 os dados de instancia permanecem salvos para reutilizar a sessao.
+
+## Assinaturas mensais com Stripe (modo de teste)
+
+O checkout simulado continua preservado. Para testar o Stripe, crie no Dashboard um
+produto Profissional e um preço recorrente mensal em BRL. O valor em centavos em
+`STRIPE_MONTHLY_PRICE_CENTS` precisa ser igual ao preço do Dashboard; o backend
+confere preço, moeda e intervalo antes de criar a sessão. O Stripe usa Checkout
+hospedado para os dados do cartão e o portal do cliente para gerenciar/cancelar.
+
+Configure no `Back-end/.env` local, sem copiar segredos para o frontend ou Git:
+
+```dotenv
+STRIPE_ENABLED=true
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_MONTHLY_PRICE_ID=price_...
+STRIPE_MONTHLY_PRICE_CENTS=9990
+```
+
+`9990` acima é apenas exemplo e não define o preço comercial. Use o valor que foi
+decidido e cadastrado no Dashboard. Mantenha `sk_test_` durante os testes. Para
+webhooks locais, instale/autentique o Stripe CLI e execute:
+
+```powershell
+stripe listen --forward-to localhost:8080/api/platform/webhooks/stripe
+```
+
+Copie o `whsec_...` mostrado pelo CLI para `STRIPE_WEBHOOK_SECRET`. Em produção,
+configure no Dashboard o endpoint público `/api/platform/webhooks/stripe` para
+`checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`,
+`customer.subscription.updated` e `customer.subscription.deleted`. Para habilitar
+cancelamento pelo portal, configure também as opções do Customer Portal no
+Dashboard. Reinicie/reconstrua o backend depois de atualizar `.env`.
+
+`invoice.paid` é a confirmação que libera ou renova o plano. Retorno do navegador
+não ativa assinatura. O modo simulado não inicia cobranças e as contas existentes
+não são inscritas automaticamente. Só troque para chaves `sk_live_` depois de
+validar checkout, webhooks, renovação, falha e cancelamento em modo de teste.
 
 Limites locais adicionais: Evolution 1 CPU/768 MB, PostgreSQL 0,5 CPU/256 MB,
 Redis 0,25 CPU/128 MB. O consumo real pode ser menor; as primeiras migrations
