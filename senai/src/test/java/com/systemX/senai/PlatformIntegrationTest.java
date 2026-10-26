@@ -49,6 +49,14 @@ class PlatformIntegrationTest {
   mvc.perform(get("/api/platform/context").header("Authorization",old)).andExpect(status().isUnauthorized());
  }
 
+ @Test void webhookStripePublicoRejeitaAssinaturaInvalida() throws Exception {
+  mvc.perform(post("/api/platform/webhooks/stripe")
+      .contentType(MediaType.APPLICATION_JSON)
+      .header("Stripe-Signature", "assinatura-invalida")
+      .content("{}"))
+    .andExpect(status().isBadRequest());
+ }
+
  @Test void limiteDeTesteEPagamentoPixOuCartaoComConfirmacaoIdempotente() throws Exception {
   for(String method:new String[]{"PIX","CARD"}) {
    var a=owner("quota-"+method.toLowerCase()+"@test.com"); var other=owner("other-"+method.toLowerCase()+"@test.com");

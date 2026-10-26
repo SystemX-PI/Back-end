@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import com.systemX.senai.entity.PlatformAccount;
 import java.time.Instant;
 import java.util.Map;
+import java.util.LinkedHashMap;
 @Component
 public class PlatformPlans {
  private final int priceCents;
@@ -12,5 +13,10 @@ public class PlatformPlans {
  public int whatsappLimit(PlatformAccount a) { return pro(a)?3:1; }
  public int gmailLimit(PlatformAccount a) { return pro(a)?2:1; }
  public int priceCents() { return priceCents; }
- public Map<String,Object> view(PlatformAccount a) { return Map.of("tier",pro(a)?"PRO":"TRIAL","whatsappLimit",whatsappLimit(a),"gmailLimit",gmailLimit(a),"upgradePriceCents",priceCents,"currency","BRL"); }
+ public Map<String,Object> view(PlatformAccount a) {
+  var view=new LinkedHashMap<String,Object>();
+  view.put("tier",pro(a)?"PRO":"TRIAL"); view.put("whatsappLimit",whatsappLimit(a)); view.put("gmailLimit",gmailLimit(a)); view.put("upgradePriceCents",priceCents); view.put("currency","BRL");
+  view.put("billingProvider",a.getStripeSubscriptionId()!=null?"STRIPE":null); view.put("billingStatus",a.getStripeSubscriptionStatus());
+  return view;
+ }
 }

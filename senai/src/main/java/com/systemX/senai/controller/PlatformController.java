@@ -9,7 +9,8 @@ public class PlatformController {
  private final PlatformService service;
  private final com.systemX.senai.service.ProfileService profile;
  private final com.systemX.senai.service.PlatformCheckoutService checkout;
- public PlatformController(PlatformService service,com.systemX.senai.service.PlatformCheckoutService checkout,com.systemX.senai.service.ProfileService profile) { this.service=service; this.checkout=checkout; this.profile=profile; }
+ private final com.systemX.senai.service.StripeBillingService stripe;
+ public PlatformController(PlatformService service,com.systemX.senai.service.PlatformCheckoutService checkout,com.systemX.senai.service.ProfileService profile,com.systemX.senai.service.StripeBillingService stripe) { this.service=service; this.checkout=checkout; this.profile=profile; this.stripe=stripe; }
  public record Person(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(min=6,max=100) String password) {}
  public record Instance(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,60}") String name) {}
  public record Mailbox(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(max=200) String password) {}
@@ -31,6 +32,9 @@ public class PlatformController {
  @DeleteMapping("/mailboxes/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void removeMailbox(@RequestParam(required=false) Long accountId,@PathVariable Long id) { service.removeMailbox(accountId,id); }
  public record Checkout(@NotBlank @Pattern(regexp="PIX|CARD") String paymentMethod) {}
  @PostMapping("/subscription/checkout") @ResponseStatus(HttpStatus.CREATED) public Object checkout(@RequestParam(required=false) Long accountId,@Valid @RequestBody Checkout p) { return checkout.create(accountId,p.paymentMethod()); }
+ @PostMapping("/subscription/stripe-checkout") @ResponseStatus(HttpStatus.CREATED) public Object stripeCheckout(@RequestParam(required=false) Long accountId) { return stripe.createCheckout(accountId); }
+ @PostMapping("/subscription/portal") public Object stripePortal(@RequestParam(required=false) Long accountId) { return stripe.createPortalSession(accountId); }
+ @PostMapping("/webhooks/stripe") @ResponseStatus(HttpStatus.NO_CONTENT) public void stripeWebhook(@RequestBody String payload,@RequestHeader(value="Stripe-Signature",required=false) String signature) { stripe.verifyAndProcess(payload,signature); }
  @PostMapping("/subscription/checkout/{id}/confirm") public Object confirm(@RequestParam(required=false) Long accountId,@PathVariable String id) { return checkout.confirm(accountId,id); }
  public record Profile(@NotBlank @Size(max=120) String name,@Size(max=400000) String photo) {}
  public record PasswordChange(@NotBlank @Size(max=100) String currentPassword,@NotBlank @Size(min=10,max=72) String newPassword) {}

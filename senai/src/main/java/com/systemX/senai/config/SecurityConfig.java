@@ -25,6 +25,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/api/auth/**").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/platform/webhooks/stripe").permitAll()
                     .requestMatchers("/api/platform/**").hasAnyRole("ADMINISTRADOR", "CLIENTE", "USUARIO", "FUNCIONARIO")
                     .requestMatchers("/api/portal/**").hasRole("CLIENTE")
                     .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()

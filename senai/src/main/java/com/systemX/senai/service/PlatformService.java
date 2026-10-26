@@ -27,12 +27,21 @@ public class PlatformService {
  private final JdbcTemplate jdbc;
  private final boolean simulation;
  private final PlatformPlans plans;
+ private final boolean stripeEnabled;
+ private final int stripePriceCents;
  public PlatformService(PlatformAccountRepository accounts, PlatformInstanceRepository instances,
   PlatformMailboxRepository mailboxes, UsuarioRepository users, PasswordEncoder encoder,
   EvolutionService evolution, PlatformCredentialService credentials, JdbcTemplate jdbc, PlatformPlans plans,
-  @Value("${app.billing.simulation-enabled:false}") boolean simulation) {
+  @Value("${app.billing.simulation-enabled:false}") boolean simulation,
+  @Value("${app.billing.stripe.enabled:false}") boolean stripeEnabled,
+  @Value("${app.billing.stripe.secret-key:}") String stripeSecretKey,
+  @Value("${app.billing.stripe.webhook-secret:}") String stripeWebhookSecret,
+  @Value("${app.billing.stripe.monthly-price-id:}") String stripePriceId,
+  @Value("${app.billing.stripe.monthly-price-cents:0}") int stripePriceCents) {
   this.accounts=accounts; this.instances=instances; this.mailboxes=mailboxes; this.users=users;
   this.encoder=encoder; this.evolution=evolution; this.credentials=credentials; this.jdbc=jdbc; this.simulation=simulation; this.plans=plans;
+  this.stripeEnabled=stripeEnabled && !stripeSecretKey.isBlank() && !stripeWebhookSecret.isBlank() && !stripePriceId.isBlank() && stripePriceCents>0;
+  this.stripePriceCents=stripePriceCents;
  }
  public Usuario currentUser() {
   var auth=SecurityContextHolder.getContext().getAuthentication();
@@ -64,7 +73,7 @@ public class PlatformService {
  @Transactional public UsuarioResponse createClient(String name,String email,String password) { admin(); return signup(name,email,password); }
  public Map<String,Object> context(Long id) {
   var u=currentUser(); var map=new LinkedHashMap<String,Object>();
-  map.put("role",u.getTipo()); map.put("photo",u.getFoto()); map.put("name",u.getNome()); map.put("email",u.getEmail()); map.put("simulationEnabled",simulation);
+  map.put("role",u.getTipo()); map.put("photo",u.getFoto()); map.put("name",u.getNome()); map.put("email",u.getEmail()); map.put("simulationEnabled",simulation); map.put("stripeEnabled",stripeEnabled); map.put("stripeMonthlyPriceCents",stripePriceCents);
   if(u.getTipo()==TipoUsuario.ADMINISTRADOR && id==null) { map.put("account",null); return map; }
   var a=account(id); map.put("subscription",plans.view(a)); map.put("account",a); map.put("active",active(a));
   map.put("instances",instances.findByContaIdOrderByIdAsc(a.getId()).stream().map(this::instanceView).toList());

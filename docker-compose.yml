@@ -34,6 +34,13 @@ services:
       MAIL_USERNAME: ${MAIL_USERNAME:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       BILLING_SIMULATION_ENABLED: "true"
+      STRIPE_ENABLED: ${STRIPE_ENABLED:-false}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_MONTHLY_PRICE_ID: ${STRIPE_MONTHLY_PRICE_ID:-}
+      STRIPE_MONTHLY_PRICE_CENTS: ${STRIPE_MONTHLY_PRICE_CENTS:-0}
+      STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-http://localhost:5173/app/assinatura?stripe=success}
+      STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-http://localhost:5173/app/upgrade?stripe=cancelled}
       WHATSAPP_ENABLED: "true"
       EVOLUTION_API_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-systemx-local-evolution-key-change-before-publishing}
