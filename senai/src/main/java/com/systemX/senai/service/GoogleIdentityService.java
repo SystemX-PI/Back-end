@@ -13,7 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
-import com.google.api.client.json.jackson2.JacksonFactory;
+import com.google.api.client.json.gson.GsonFactory;
 import com.systemX.senai.exception.InvalidCredentialsException;
 
 /** Verifies Google ID tokens and returns only the identity claims used by this application. */
@@ -25,7 +25,7 @@ public class GoogleIdentityService {
     public GoogleIdentityService(@Value("${app.auth.google.client-id:}") String clientId) {
         this.clientId = clientId == null ? "" : clientId.trim();
         this.verifier = this.clientId.isBlank() ? null
-                : new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), JacksonFactory.getDefaultInstance())
+                : new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), GsonFactory.getDefaultInstance())
                         .setAudience(List.of(this.clientId))
                         .build();
     }
