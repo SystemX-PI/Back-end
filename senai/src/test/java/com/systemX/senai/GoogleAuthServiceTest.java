@@ -91,6 +91,31 @@ class GoogleAuthServiceTest {
     }
 
     @Test
+    void registrationCreatesTheGoogleAccountWithTheCompanyNameAndStartsASession() {
+        Usuario created = user(identity.email());
+        when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.empty());
+        when(users.lockByEmail(identity.email())).thenReturn(Optional.empty());
+        when(platform.signupWithGoogle(identity, "Empresa Aurora")).thenReturn(created);
+
+        var response = auth.registerWithGoogle("valid-google-token", "Empresa Aurora");
+
+        assertEquals("CLIENTE", response.tipo());
+        verify(platform).signupWithGoogle(identity, "Empresa Aurora");
+        verify(refreshTokens).save(any());
+    }
+
+    @Test
+    void registrationRejectsAnAlreadyRegisteredGoogleAccount() {
+        when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.of(user(identity.email())));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> auth.registerWithGoogle("valid-google-token", "Empresa Aurora"));
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        verify(platform, never()).signupWithGoogle(any(), any());
+    }
+
+    @Test
     void linkRequiresTheGoogleSubjectToBeFreeOrAlreadyOwnedByTheCurrentUser() {
         Usuario current = user("person@example.com");
         ReflectionTestUtils.setField(current, "id", 1L);

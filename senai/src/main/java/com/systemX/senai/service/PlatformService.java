@@ -67,9 +67,17 @@ public class PlatformService {
   return new UsuarioResponse(u.getId(),u.getNome(),u.getEmail(),u.getTipo(),u.isAtivo());
  }
  @Transactional
- public Usuario signupWithGoogle(GoogleIdentityService.Identity identity) {
+   public Usuario signupWithGoogle(GoogleIdentityService.Identity identity) {
+    return signupWithGoogle(identity, identity.name());
+   }
+   @Transactional
+   public Usuario signupWithGoogle(GoogleIdentityService.Identity identity, String companyName) {
   String email=identity.email().trim().toLowerCase(Locale.ROOT);
-  var account=new PlatformAccount(); account.setNome(identity.name()); account.setBrandName(identity.name()); account.setOwnerEmail(email); accounts.save(account);
+    String normalizedCompanyName=companyName == null ? "" : companyName.trim();
+    if (normalizedCompanyName.length() < 2 || normalizedCompanyName.length() > 255) {
+     throw new IllegalArgumentException("Informe um nome de empresa entre 2 e 255 caracteres.");
+    }
+    var account=new PlatformAccount(); account.setNome(normalizedCompanyName); account.setBrandName(normalizedCompanyName); account.setOwnerEmail(email); accounts.save(account);
   var user=new Usuario(); user.setNome(identity.name()); user.setEmail(email);
   user.setSenha(encoder.encode(UUID.randomUUID()+UUID.randomUUID().toString()));
   user.setTipo(TipoUsuario.CLIENTE); user.setContaId(account.getId()); user.setFoto(identity.picture());

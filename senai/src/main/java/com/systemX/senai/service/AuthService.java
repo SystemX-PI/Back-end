@@ -78,6 +78,20 @@ public class AuthService {
     }
 
     @Transactional
+    public AuthResponse registerWithGoogle(String credential, String companyName) {
+        GoogleIdentityService.Identity identity = googleIdentityService.verify(credential);
+        if (usuarioRepository.findByGoogleSubject(identity.subject()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Esta conta Google já possui cadastro. Entre pela tela de login.");
+        }
+        if (usuarioRepository.lockByEmail(identity.email()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Este e-mail já possui cadastro. Entre pela tela de login ou vincule o Google pelo perfil.");
+        }
+        return issueTokens(platformService.signupWithGoogle(identity, companyName));
+    }
+
+    @Transactional
     public void linkGoogle(String credential, String authenticatedEmail) {
         GoogleIdentityService.Identity identity = googleIdentityService.verify(credential);
         Usuario usuario = usuarioRepository.lockByEmail(authenticatedEmail.trim().toLowerCase(java.util.Locale.ROOT))

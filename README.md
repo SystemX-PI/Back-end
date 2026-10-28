@@ -107,6 +107,8 @@ O Flyway executa automaticamente as migrations em `senai/src/main/resources/db/m
 
 O botão usa Google Identity Services no navegador. O front-end envia o ID token recebido para `POST /api/auth/google`; o Spring verifica assinatura, emissor, validade e audiência com o `GOOGLE_CLIENT_ID` do servidor, além de exigir e-mail verificado. O usuário é identificado pelo `sub` único do Google. Senhas e tokens Google não são armazenados. A sessão da aplicação continua usando o JWT e o refresh token rotativo que já existem.
 
+Na tela de cadastro, `POST /api/auth/google/register` recebe o ID token validado e o nome da empresa escolhido pela pessoa. A conta é criada como `CLIENTE` e a API retorna a sessão normal da aplicação. Essa tela pede somente o nome da empresa; se o Google/e-mail já tiver cadastro, a API orienta entrar pela tela de login em vez de duplicar a conta.
+
 Se o `sub` já estiver cadastrado, a conta existente é reconhecida. Um novo Google cria um usuário `CLIENTE` e a conta de teste correspondente, sem privilégios administrativos. Se já houver uma conta local com o mesmo e-mail, o login Google não a associa automaticamente: entre com a senha local e, em **Meu perfil**, vincule o Google enquanto estiver autenticado. Essa operação exige a sessão atual e um ID token Google válido. O logout continua revogando o refresh token da aplicação.
 
 ### Google Cloud Console

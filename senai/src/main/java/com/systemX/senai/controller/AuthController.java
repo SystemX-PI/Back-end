@@ -43,9 +43,18 @@ public class AuthController {
 
     public record GoogleCredential(@NotBlank @Size(max=16384) String credential) { }
 
+    public record GoogleRegistration(
+            @NotBlank @Size(max=16384) String credential,
+            @NotBlank @Size(min=2, max=255) String companyName) { }
+
     @PostMapping("/google")
     public AuthResponse google(@Valid @RequestBody GoogleCredential request) {
         return service.loginWithGoogle(request.credential());
+    }
+
+    @PostMapping("/google/register")
+    public AuthResponse registerWithGoogle(@Valid @RequestBody GoogleRegistration request) {
+        return service.registerWithGoogle(request.credential(), request.companyName());
     }
 
     @PostMapping("/google/link")
