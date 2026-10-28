@@ -66,6 +66,16 @@ public class PlatformService {
   var u=new Usuario(); u.setNome(name.trim()); u.setEmail(a.getOwnerEmail()); u.setSenha(encoder.encode(password)); u.setTipo(TipoUsuario.CLIENTE); u.setContaId(a.getId()); users.save(u);
   return new UsuarioResponse(u.getId(),u.getNome(),u.getEmail(),u.getTipo(),u.isAtivo());
  }
+ @Transactional
+ public Usuario signupWithGoogle(GoogleIdentityService.Identity identity) {
+  String email=identity.email().trim().toLowerCase(Locale.ROOT);
+  var account=new PlatformAccount(); account.setNome(identity.name()); account.setBrandName(identity.name()); account.setOwnerEmail(email); accounts.save(account);
+  var user=new Usuario(); user.setNome(identity.name()); user.setEmail(email);
+  user.setSenha(encoder.encode(UUID.randomUUID()+UUID.randomUUID().toString()));
+  user.setTipo(TipoUsuario.CLIENTE); user.setContaId(account.getId()); user.setFoto(identity.picture());
+  user.setAuthProvider("GOOGLE"); user.setGoogleSubject(identity.subject());
+  return users.save(user);
+ }
  public List<Map<String,Object>> clients() {
   admin();
   return jdbc.queryForList("SELECT a.id, a.nome, a.owner_email AS email, a.trial_ends_at AS trialEndsAt, a.paid_until AS paidUntil, a.suspended, a.professional, COALESCE(i.total,0) AS instances, COALESCE(m.total,0) AS gmails, COALESCE(u.total,0) AS users FROM platform_account a LEFT JOIN (SELECT conta_id, COUNT(*) total FROM platform_instance GROUP BY conta_id) i ON i.conta_id=a.id LEFT JOIN (SELECT conta_id, COUNT(*) total FROM platform_mailbox GROUP BY conta_id) m ON m.conta_id=a.id LEFT JOIN (SELECT conta_id, COUNT(*) total FROM usuario WHERE tipo <> 'CLIENTE' GROUP BY conta_id) u ON u.conta_id=a.id ORDER BY a.id DESC LIMIT 200");
@@ -74,6 +84,7 @@ public class PlatformService {
  public Map<String,Object> context(Long id) {
   var u=currentUser(); var map=new LinkedHashMap<String,Object>();
   map.put("role",u.getTipo()); map.put("photo",u.getFoto()); map.put("name",u.getNome()); map.put("email",u.getEmail()); map.put("simulationEnabled",simulation); map.put("stripeEnabled",stripeEnabled); map.put("stripeMonthlyPriceCents",stripePriceCents);
+  map.put("googleLinked",u.getGoogleSubject()!=null);
   if(u.getTipo()==TipoUsuario.ADMINISTRADOR && id==null) { map.put("account",null); return map; }
   var a=account(id); map.put("subscription",plans.view(a)); map.put("account",a); map.put("active",active(a));
   map.put("instances",instances.findByContaIdOrderByIdAsc(a.getId()).stream().map(this::instanceView).toList());

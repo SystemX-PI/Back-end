@@ -140,6 +140,14 @@ class AuthIntegrationTest {
     }
 
     @Test
+    void shouldRequireAnExistingApplicationSessionToLinkGoogle() throws Exception {
+        mockMvc.perform(post("/api/auth/google/link")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"credential\":\"google-id-token\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void shouldRequireAdministratorRoleToConfigureEmail() throws Exception {
         Usuario cliente = criarUsuario("cliente-email@teste.com", TipoUsuario.CLIENTE);
         String tokenCliente = "Bearer " + jwtService.generate(cliente);
