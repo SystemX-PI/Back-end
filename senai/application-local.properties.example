@@ -1,6 +1,11 @@
 # Copie este arquivo para application-local.properties e preencha os valores locais.
 # application-local.properties nao deve ser commitado.
 
+# Client ID público do OAuth para um cliente do tipo Aplicativo Web.
+app.auth.google.client-id=
+# Origens exatas do browser quando o front-end chamar a API diretamente.
+app.cors.allowed-origins=http://localhost:5173
+
 # Evolution API local
 app.whatsapp.enabled=false
 app.whatsapp.api-url=http://localhost:8081

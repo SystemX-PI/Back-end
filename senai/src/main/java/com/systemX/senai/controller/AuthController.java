@@ -6,6 +6,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.security.Principal;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import com.systemX.senai.dto.AuthResponse;
 import com.systemX.senai.dto.LoginRequest;
@@ -36,6 +39,28 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return service.login(request);
+    }
+
+    public record GoogleCredential(@NotBlank @Size(max=16384) String credential) { }
+
+    public record GoogleRegistration(
+            @NotBlank @Size(max=16384) String credential,
+            @NotBlank @Size(min=2, max=255) String companyName) { }
+
+    @PostMapping("/google")
+    public AuthResponse google(@Valid @RequestBody GoogleCredential request) {
+        return service.loginWithGoogle(request.credential());
+    }
+
+    @PostMapping("/google/register")
+    public AuthResponse registerWithGoogle(@Valid @RequestBody GoogleRegistration request) {
+        return service.registerWithGoogle(request.credential(), request.companyName());
+    }
+
+    @PostMapping("/google/link")
+    public ResponseEntity<Void> linkGoogle(@Valid @RequestBody GoogleCredential request, Principal principal) {
+        service.linkGoogle(request.credential(), principal.getName());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/refresh")

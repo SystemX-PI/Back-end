@@ -1,0 +1,7 @@
+ALTER TABLE usuario
+    ADD COLUMN auth_provider VARCHAR(20) NOT NULL DEFAULT 'LOCAL',
+    ADD COLUMN google_subject VARCHAR(255) NULL,
+    ADD COLUMN created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    ADD COLUMN updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6);
+
+CREATE UNIQUE INDEX uq_usuario_google_subject ON usuario (google_subject);

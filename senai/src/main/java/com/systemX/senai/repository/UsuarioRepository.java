@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 public interface UsuarioRepository extends JpaRepository<Usuario, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<Usuario> {
 	Optional<Usuario> findByEmail(String email);
+	Optional<Usuario> findByGoogleSubject(String googleSubject);
 	Optional<Usuario> findFirstByAtivoTrue();
     long countByTipoAndAtivoTrue(com.systemX.senai.enums.TipoUsuario tipo);
     boolean existsByTipo(com.systemX.senai.enums.TipoUsuario tipo);

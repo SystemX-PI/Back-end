@@ -1,6 +1,7 @@
 package com.systemX.senai.entity;
 
 import com.systemX.senai.enums.TipoUsuario;
+import java.time.Instant;
 
 import jakarta.persistence.*;
 
@@ -21,6 +22,36 @@ public class Usuario {
     private String foto;
     public String getFoto() { return foto; }
     public void setFoto(String foto) { this.foto = foto; }
+
+    @Column(name = "auth_provider", nullable = false, length = 20)
+    private String authProvider = "LOCAL";
+
+    @Column(name = "google_subject", unique = true, length = 255)
+    private String googleSubject;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt = Instant.now();
+
+    public String getAuthProvider() { return authProvider; }
+    public void setAuthProvider(String authProvider) { this.authProvider = authProvider; }
+    public String getGoogleSubject() { return googleSubject; }
+    public void setGoogleSubject(String googleSubject) { this.googleSubject = googleSubject; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+
+    @PrePersist
+    void onCreate() {
+        Instant now = Instant.now();
+        if (createdAt == null) createdAt = now;
+        updatedAt = now;
+        if (authProvider == null || authProvider.isBlank()) authProvider = "LOCAL";
+    }
+
+    @PreUpdate
+    void onUpdate() { updatedAt = Instant.now(); }
 
     private Long contaId;
     public Long getContaId() { return contaId; }

@@ -103,6 +103,62 @@ Esses valores podem ser substituidos pelas variaveis de ambiente `DB_URL`, `DB_U
 
 O Flyway executa automaticamente as migrations em `senai/src/main/resources/db/migration` e cria os dados-base usados nos testes do Postman.
 
+## Login com Google
+
+O botão usa Google Identity Services no navegador. O front-end envia o ID token recebido para `POST /api/auth/google`; o Spring verifica assinatura, emissor, validade e audiência com o `GOOGLE_CLIENT_ID` do servidor, além de exigir e-mail verificado. O usuário é identificado pelo `sub` único do Google. Senhas e tokens Google não são armazenados. A sessão da aplicação continua usando o JWT e o refresh token rotativo que já existem.
+
+Na tela de cadastro, `POST /api/auth/google/register` recebe o ID token validado e o nome da empresa escolhido pela pessoa. A conta é criada como `CLIENTE` e a API retorna a sessão normal da aplicação. Essa tela pede somente o nome da empresa; se o Google/e-mail já tiver cadastro, a API orienta entrar pela tela de login em vez de duplicar a conta.
+
+O login Google (`POST /api/auth/google`) só autentica uma conta cujo Google já esteja vinculado pelo `sub`. Ele nunca cria uma conta. Para uma conta ainda não cadastrada, use **Fazer Cadastro com o Google** na tela de cadastro. Se já houver uma conta local com o mesmo e-mail, o login Google não a associa automaticamente: entre com a senha local e, em **Meu perfil**, vincule o Google enquanto estiver autenticado. Essa operação exige a sessão atual e um ID token Google válido. O logout continua revogando o refresh token da aplicação.
+
+### Google Cloud Console
+
+1. Abra o [Google Cloud Console](https://console.cloud.google.com/) e crie ou selecione um projeto.
+2. Em **Google Auth Platform → Branding**, informe o nome do app, o e-mail de suporte e os links da política de privacidade e da página inicial para produção. Configure o público interno ou externo conforme a equipe. Enquanto o app externo estiver em teste, adicione as contas de teste.
+3. Em **Google Auth Platform → Clients**, crie um cliente OAuth do tipo **Web application**.
+4. Em **Authorized JavaScript origins**, adicione `http://localhost`, `http://localhost:5173` e, para produção, a origem HTTPS exata do site (por exemplo `https://app.suaempresa.com`). Não use curingas. Este fluxo usa o modo popup, então não há URI de redirecionamento/callback.
+5. Para autenticação, use apenas os escopos padrão `openid`, `email` e `profile`. Copie o **Client ID**. O Client ID é público e vai para front e back; não use nem publique o Client Secret.
+
+Para produção, cadastre e verifique no Console o domínio que hospeda a página inicial e a política de privacidade, e informe esse domínio na configuração de domínios autorizados. No modo externo de teste, somente as contas de teste adicionadas poderão autenticar.
+
+O Google muda os nomes e a navegação do Console ocasionalmente. Consulte também o [guia oficial de configuração do Google Identity Services](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid).
+
+### Configuração local
+
+Para execução com Docker Compose, na raiz de `Back-end`, copie `.env.example` para `.env` sem sobrescrever um arquivo existente e preencha `GOOGLE_CLIENT_ID`. O Compose usa esse Client ID na compilação do front-end e na validação do back-end. Os arquivos `.env` não devem ser commitados.
+
+Para executar front e back fora do Docker:
+
+```powershell
+# Front-End: crie .env a partir do exemplo somente se ele ainda não existir.
+cd ../Front-End
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# Edite VITE_GOOGLE_CLIENT_ID no arquivo .env.
+npm ci
+npm run dev
+
+# Em outro PowerShell, Back-end: configure o Client ID no arquivo local ignorado.
+cd ../Back-end/senai
+if (-not (Test-Path application-local.properties)) { Copy-Item application-local.properties.example application-local.properties }
+# Edite app.auth.google.client-id no application-local.properties.
+mvn spring-boot:run
+```
+
+Depois de iniciar os dois processos, abra `http://localhost:5173/login` e use o botão **Entrar com Google**. A conta precisa ter sido criada pelo cadastro Google ou vinculada ao perfil depois do login por senha. Um e-mail que já pertence a uma conta local pede para entrar com a senha e vincular o Google pelo perfil. O teste real depende de um Client ID válido e de uma conta Google autorizada no Console.
+
+Para desenvolvimento com origens diferentes, ajuste `app.cors.allowed-origins` (execução manual) ou `CORS_ALLOWED_ORIGINS` (Compose) para uma lista separada por vírgulas de origens exatas, incluindo esquema e porta. Tokens são enviados no header `Authorization`, então o CORS não habilita credenciais/cookies. Com o Vite proxy ou o Nginx do Compose, o navegador acessa `/api` na mesma origem e o CORS não é necessário.
+
+### Produção e diagnóstico
+
+Use HTTPS no site e no endpoint da API. Cadastre a origem HTTPS real em **Authorized JavaScript origins** e inclua-a em `CORS_ALLOWED_ORIGINS` somente se o browser chamar uma API de outra origem. Configure o mesmo Client ID em `VITE_GOOGLE_CLIENT_ID` durante o build do front-end e em `GOOGLE_CLIENT_ID` no servidor. Mantenha `JWT_SECRET`, credenciais do banco e outros segredos somente no servidor.
+
+- `VITE_GOOGLE_CLIENT_ID` ausente: o login Google fica desabilitado e a tela mostra como configurar o Client ID.
+- Erro de origem: confira se esquema, domínio e porta do site aparecem exatamente nas origens JavaScript autorizadas.
+- Token rejeitado: confirme que front e back usam o mesmo Client ID e que o relógio do servidor está correto.
+- E-mail já cadastrado: entre com a senha local e vincule a conta Google em **Meu perfil**.
+
+A migration `V13__google_auth_identity.sql` adiciona provedor, subject Google único e datas de criação/atualização ao usuário. As migrations são aplicadas automaticamente pelo Flyway na próxima inicialização do back-end; a conta Google nunca define o tipo de usuário enviado pelo navegador.
+
 O envio de e-mail inicia desabilitado. Depois de autenticar, o frontend pode configurar o Gmail com senha de app por `PUT /api/configuracoes/email`:
 
 ```json
