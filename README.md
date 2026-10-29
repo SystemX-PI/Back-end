@@ -109,7 +109,7 @@ O botão usa Google Identity Services no navegador. O front-end envia o ID token
 
 Na tela de cadastro, `POST /api/auth/google/register` recebe o ID token validado e o nome da empresa escolhido pela pessoa. A conta é criada como `CLIENTE` e a API retorna a sessão normal da aplicação. Essa tela pede somente o nome da empresa; se o Google/e-mail já tiver cadastro, a API orienta entrar pela tela de login em vez de duplicar a conta.
 
-Se o `sub` já estiver cadastrado, a conta existente é reconhecida. Um novo Google cria um usuário `CLIENTE` e a conta de teste correspondente, sem privilégios administrativos. Se já houver uma conta local com o mesmo e-mail, o login Google não a associa automaticamente: entre com a senha local e, em **Meu perfil**, vincule o Google enquanto estiver autenticado. Essa operação exige a sessão atual e um ID token Google válido. O logout continua revogando o refresh token da aplicação.
+O login Google (`POST /api/auth/google`) só autentica uma conta cujo Google já esteja vinculado pelo `sub`. Ele nunca cria uma conta. Para uma conta ainda não cadastrada, use **Fazer Cadastro com o Google** na tela de cadastro. Se já houver uma conta local com o mesmo e-mail, o login Google não a associa automaticamente: entre com a senha local e, em **Meu perfil**, vincule o Google enquanto estiver autenticado. Essa operação exige a sessão atual e um ID token Google válido. O logout continua revogando o refresh token da aplicação.
 
 ### Google Cloud Console
 
@@ -144,7 +144,7 @@ if (-not (Test-Path application-local.properties)) { Copy-Item application-local
 mvn spring-boot:run
 ```
 
-Depois de iniciar os dois processos, abra `http://localhost:5173/login` e use o botão **Entrar com Google**. Um login novo cria a conta; um e-mail que já pertence a uma conta local pede para entrar com a senha e vincular o Google pelo perfil. O teste real depende de um Client ID válido e de uma conta Google autorizada no Console.
+Depois de iniciar os dois processos, abra `http://localhost:5173/login` e use o botão **Entrar com Google**. A conta precisa ter sido criada pelo cadastro Google ou vinculada ao perfil depois do login por senha. Um e-mail que já pertence a uma conta local pede para entrar com a senha e vincular o Google pelo perfil. O teste real depende de um Client ID válido e de uma conta Google autorizada no Console.
 
 Para desenvolvimento com origens diferentes, ajuste `app.cors.allowed-origins` (execução manual) ou `CORS_ALLOWED_ORIGINS` (Compose) para uma lista separada por vírgulas de origens exatas, incluindo esquema e porta. Tokens são enviados no header `Authorization`, então o CORS não habilita credenciais/cookies. Com o Vite proxy ou o Nginx do Compose, o navegador acessa `/api` na mesma origem e o CORS não é necessário.
 

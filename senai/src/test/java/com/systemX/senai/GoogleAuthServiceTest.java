@@ -65,17 +65,16 @@ class GoogleAuthServiceTest {
     }
 
     @Test
-    void loginCreatesANewGoogleAccountWhenTheIdentityAndEmailAreNew() {
-        Usuario created = user(identity.email());
+    void loginRejectsAGoogleIdentityThatHasNotBeenRegistered() {
         when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.empty());
         when(users.lockByEmail(identity.email())).thenReturn(Optional.empty());
-        when(platform.signupWithGoogle(identity)).thenReturn(created);
 
-        var response = auth.loginWithGoogle("valid-google-token");
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> auth.loginWithGoogle("valid-google-token"));
 
-        assertEquals("CLIENTE", response.tipo());
-        verify(platform).signupWithGoogle(identity);
-        verify(refreshTokens).save(any());
+        assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
+        verify(platform, never()).signupWithGoogle(any());
+        verify(refreshTokens, never()).save(any());
     }
 
     @Test

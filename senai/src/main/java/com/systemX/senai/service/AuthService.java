@@ -74,7 +74,8 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Já existe uma conta com este e-mail. Entre com sua senha e vincule o Google no perfil.");
         }
-        return issueTokens(platformService.signupWithGoogle(identity));
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                "Esta conta Google ainda não possui cadastro. Use Fazer Cadastro com o Google primeiro.");
     }
 
     @Transactional
