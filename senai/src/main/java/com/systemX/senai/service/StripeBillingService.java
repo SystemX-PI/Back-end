@@ -270,10 +270,10 @@ public class StripeBillingService {
     }
 
     private Instant invoicePeriodEnd(JsonNode invoice) {
-        long direct = invoice.path("period_end").asLong(0);
-        if (direct > 0) return Instant.ofEpochSecond(direct);
-        long latest = 0;
-        for (JsonNode line : invoice.path("lines").path("data")) latest = Math.max(latest, line.path("period").path("end").asLong(0));
+        long latest = invoice.path("period_end").asLong(0);
+        for (JsonNode line : invoice.path("lines").path("data")) {
+            latest = Math.max(latest, line.path("period").path("end").asLong(0));
+        }
         return latest > 0 ? Instant.ofEpochSecond(latest) : null;
     }
 
