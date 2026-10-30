@@ -14,11 +14,13 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
-import com.systemX.senai.exception.InvalidCredentialsException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Verifies Google ID tokens and returns only the identity claims used by this application. */
 @Service
 public class GoogleIdentityService {
+    private static final Logger log = LoggerFactory.getLogger(GoogleIdentityService.class);
     private final String clientId;
     private final GoogleIdTokenVerifier verifier;
 
@@ -35,10 +37,23 @@ public class GoogleIdentityService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "O login com Google ainda não foi configurado no servidor.");
         }
+        GoogleIdToken token;
         try {
-            GoogleIdToken token = verifier.verify(credential);
-            if (token == null) {
-                throw new InvalidCredentialsException();
+            token = GoogleIdToken.parse(GsonFactory.getDefaultInstance(), credential);
+        } catch (IOException | IllegalArgumentException exception) {
+            log.warn("Google sign-in rejected: malformed_id_token");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "O Google retornou uma autenticação inválida. Atualize a página e entre com Google novamente.");
+        }
+        try {
+            if (!verifier.verify(token)) {
+                // Record only validation outcomes, never tokens, claims, email or subject.
+                log.warn("Google sign-in rejected: audience_valid={}, issuer_valid={}, time_valid={}",
+                        token.verifyAudience(List.of(clientId)),
+                        token.verifyIssuer(List.of("accounts.google.com", "https://accounts.google.com")),
+                        token.verifyTime(System.currentTimeMillis(), verifier.getAcceptableTimeSkewSeconds()));
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                        "Não foi possível validar a autenticação Google. Atualize a página e selecione sua conta novamente.");
             }
             GoogleIdToken.Payload payload = token.getPayload();
             String subject = payload.getSubject();
@@ -46,7 +61,9 @@ public class GoogleIdentityService {
             if (subject == null || subject.isBlank() || subject.length() > 255
                     || email == null || email.isBlank() || email.length() > 255 || !email.contains("@")
                     || !Boolean.TRUE.equals(payload.getEmailVerified())) {
-                throw new InvalidCredentialsException();
+                log.warn("Google sign-in rejected: missing_or_unverified_identity");
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                        "A conta Google precisa ter um e-mail verificado para entrar.");
             }
 
             String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
@@ -61,6 +78,7 @@ public class GoogleIdentityService {
                     : null;
             return new Identity(subject, normalizedEmail, name, picture);
         } catch (GeneralSecurityException | IOException exception) {
+            log.warn("Google sign-in unavailable: {}", exception.getClass().getSimpleName());
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Não foi possível validar a conta Google neste momento.");
         }
