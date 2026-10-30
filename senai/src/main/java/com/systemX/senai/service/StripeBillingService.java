@@ -12,11 +12,15 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.Price;
 import com.stripe.model.Customer;
+import com.stripe.model.Subscription;
+import com.stripe.model.SubscriptionItem;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 import com.stripe.param.CustomerCreateParams;
 import com.stripe.param.PriceRetrieveParams;
+import com.stripe.param.SubscriptionRetrieveParams;
+import com.stripe.param.checkout.SessionRetrieveParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -156,6 +160,98 @@ public class StripeBillingService {
     }
 
     @Transactional
+    public Map<String, Object> refreshSubscription(Long requestedAccountId) {
+        if (!enabled || stripe == null) throw error(503, "Consulta de assinatura Stripe ainda não configurada.");
+        var user = platform.currentUser();
+        if (user.getTipo() != TipoUsuario.CLIENTE && user.getTipo() != TipoUsuario.ADMINISTRADOR)
+            throw error(403, "Somente o titular pode consultar a assinatura.");
+        var account = platform.lockAccount(requestedAccountId);
+        if (account.isProfessional() && account.getPaidUntil() != null
+                && account.getPaidUntil().isAfter(Instant.now())) {
+            return subscriptionView(true, account.getStripeSubscriptionStatus(), account.getPaidUntil());
+        }
+
+        String subscriptionId = account.getStripeSubscriptionId();
+        try {
+            if (account.getStripeCheckoutSessionId() != null) {
+                Session session = stripe.v1().checkout().sessions().retrieve(
+                        account.getStripeCheckoutSessionId(), SessionRetrieveParams.builder().build());
+                if (!account.getId().toString().equals(session.getClientReferenceId())
+                        || !"subscription".equals(session.getMode()))
+                    throw error(409, "O checkout Stripe não corresponde a esta conta.");
+                if (!"complete".equals(session.getStatus()) || !"paid".equals(session.getPaymentStatus()))
+                    return subscriptionView(false, session.getPaymentStatus(), null);
+                if (session.getAmountTotal() == null || session.getAmountTotal() != monthlyPriceCents
+                        || !"brl".equalsIgnoreCase(session.getCurrency()))
+                    throw error(409, "O pagamento confirmado não corresponde ao plano mensal configurado.");
+                if (account.getStripeCustomerId() != null
+                        && !account.getStripeCustomerId().equals(session.getCustomer()))
+                    throw error(409, "O cliente Stripe do checkout não corresponde a esta conta.");
+                subscriptionId = session.getSubscription();
+                if (subscriptionId == null || subscriptionId.isBlank())
+                    return subscriptionView(false, "subscription_pending", null);
+            }
+            if (subscriptionId == null || subscriptionId.isBlank())
+                return subscriptionView(false, "checkout_not_found", null);
+
+            Subscription subscription = stripe.v1().subscriptions().retrieve(subscriptionId,
+                    SubscriptionRetrieveParams.builder().addExpand("latest_invoice").build());
+            if (account.getStripeSubscriptionId() != null
+                    && !account.getStripeSubscriptionId().equals(subscription.getId()))
+                throw error(409, "A assinatura Stripe não corresponde a esta conta.");
+            if (account.getStripeCustomerId() != null
+                    && !account.getStripeCustomerId().equals(subscription.getCustomer()))
+                throw error(409, "O cliente Stripe da assinatura não corresponde a esta conta.");
+            String metadataAccountId = subscription.getMetadata() == null ? null
+                    : subscription.getMetadata().get("platform_account_id");
+            if (!account.getId().toString().equals(metadataAccountId))
+                throw error(409, "A assinatura Stripe não está vinculada a esta conta.");
+
+            boolean paidMonthlyItem = false;
+            Instant periodEnd = null;
+            if (subscription.getItems() != null && subscription.getItems().getData() != null) {
+                for (SubscriptionItem item : subscription.getItems().getData()) {
+                    Price itemPrice = item.getPrice();
+                    if (itemPrice == null || !priceId.equals(itemPrice.getId()) || itemPrice.getUnitAmount() == null
+                            || itemPrice.getUnitAmount() != monthlyPriceCents
+                            || !"brl".equalsIgnoreCase(itemPrice.getCurrency()) || itemPrice.getRecurring() == null
+                            || !"month".equals(itemPrice.getRecurring().getInterval())) continue;
+                    paidMonthlyItem = true;
+                    if (item.getCurrentPeriodEnd() != null) {
+                        Instant itemPeriodEnd = Instant.ofEpochSecond(item.getCurrentPeriodEnd());
+                        if (periodEnd == null || itemPeriodEnd.isAfter(periodEnd)) periodEnd = itemPeriodEnd;
+                    }
+                }
+            }
+            var latestInvoice = subscription.getLatestInvoiceObject();
+            if (!"active".equals(subscription.getStatus()) || latestInvoice == null
+                    || !"paid".equals(latestInvoice.getStatus()) || !paidMonthlyItem
+                    || periodEnd == null || !periodEnd.isAfter(Instant.now()))
+                return subscriptionView(false, subscription.getStatus(), null);
+
+            account.setStripeCustomerId(subscription.getCustomer());
+            account.setStripeSubscriptionId(subscription.getId());
+            account.setStripeSubscriptionStatus(subscription.getStatus());
+            account.setProfessional(true);
+            account.setPaidUntil(periodEnd);
+            account.setStripeCheckoutSessionId(null);
+            account.setStripeCheckoutExpiresAt(null);
+            accounts.save(account);
+            return subscriptionView(true, subscription.getStatus(), periodEnd);
+        } catch (StripeException ex) {
+            throw error(502, "Não foi possível consultar a assinatura no Stripe.");
+        }
+    }
+
+    private Map<String, Object> subscriptionView(boolean active, String status, Instant paidUntil) {
+        var response = new LinkedHashMap<String, Object>();
+        response.put("active", active);
+        response.put("status", status == null ? "pending" : status);
+        response.put("paidUntil", paidUntil == null ? null : paidUntil.toString());
+        return response;
+    }
+
+    @Transactional
     public void verifyAndProcess(String payload, String signature) {
         final Event event;
         try {
@@ -270,10 +366,10 @@ public class StripeBillingService {
     }
 
     private Instant invoicePeriodEnd(JsonNode invoice) {
-        long direct = invoice.path("period_end").asLong(0);
-        if (direct > 0) return Instant.ofEpochSecond(direct);
-        long latest = 0;
-        for (JsonNode line : invoice.path("lines").path("data")) latest = Math.max(latest, line.path("period").path("end").asLong(0));
+        long latest = invoice.path("period_end").asLong(0);
+        for (JsonNode line : invoice.path("lines").path("data")) {
+            latest = Math.max(latest, line.path("period").path("end").asLong(0));
+        }
         return latest > 0 ? Instant.ofEpochSecond(latest) : null;
     }
 

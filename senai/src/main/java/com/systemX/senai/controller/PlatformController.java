@@ -34,6 +34,7 @@ public class PlatformController {
  @PostMapping("/subscription/checkout") @ResponseStatus(HttpStatus.CREATED) public Object checkout(@RequestParam(required=false) Long accountId,@Valid @RequestBody Checkout p) { return checkout.create(accountId,p.paymentMethod()); }
  @PostMapping("/subscription/stripe-checkout") @ResponseStatus(HttpStatus.CREATED) public Object stripeCheckout(@RequestParam(required=false) Long accountId) { return stripe.createCheckout(accountId); }
  @PostMapping("/subscription/portal") public Object stripePortal(@RequestParam(required=false) Long accountId) { return stripe.createPortalSession(accountId); }
+ @PostMapping("/subscription/refresh") public Object stripeRefresh(@RequestParam(required=false) Long accountId) { return stripe.refreshSubscription(accountId); }
  @PostMapping("/webhooks/stripe") @ResponseStatus(HttpStatus.NO_CONTENT) public void stripeWebhook(@RequestBody String payload,@RequestHeader(value="Stripe-Signature",required=false) String signature) { stripe.verifyAndProcess(payload,signature); }
  @PostMapping("/subscription/checkout/{id}/confirm") public Object confirm(@RequestParam(required=false) Long accountId,@PathVariable String id) { return checkout.confirm(accountId,id); }
  public record Profile(@NotBlank @Size(max=120) String name,@Size(max=400000) String photo) {}
