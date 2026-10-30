@@ -19,7 +19,14 @@ public class Cota {
 
     private boolean ativa = true;
 
-    public Cota() {
+    protected Cota() {
+        // Required by JPA.
+    }
+
+    public Cota(String numero, Grupo grupo, BigDecimal valorCredito) {
+        this.numero = numero;
+        this.grupo = grupo;
+        this.valorCredito = valorCredito;
     }
 
     public Long getId() {

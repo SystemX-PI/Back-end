@@ -24,10 +24,7 @@ public class CotaService {
     }
     public CotaResponse criar(CotaRequest request) {
         Grupo grupo = grupoRepository.findById(request.grupoId()).orElseThrow(() -> new ResourceNotFoundException("Grupo não encontrado: " + request.grupoId()));
-        Cota cota = new Cota();
-        cota.setNumero(request.numero());
-        cota.setGrupo(grupo);
-        cota.setValorCredito(request.valorCredito());
+        Cota cota = new Cota(request.numero(), grupo, request.valorCredito());
         return toResponse(repository.save(cota));
     }
     @Transactional(readOnly = true)

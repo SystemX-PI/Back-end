@@ -10,7 +10,12 @@ public class TipoConsorcio {
     @Column(nullable = false, unique = true)
     private String nome;
 
-    public TipoConsorcio() {
+    protected TipoConsorcio() {
+        // Required by JPA.
+    }
+
+    public TipoConsorcio(String nome) {
+        this.nome = nome;
     }
 
     public Long getId() {

@@ -173,22 +173,13 @@ class AuthIntegrationTest {
     void shouldReceiveContemplationInQueueAndNotifyOnlyOnRequest() throws Exception {
         Usuario admin = criarUsuario("admin-fila@teste.com", TipoUsuario.ADMINISTRADOR);
 
-        TipoConsorcio tipo = new TipoConsorcio();
-        tipo.setNome("Veiculos fila");
-        tipo = tipoConsorcioRepository.save(tipo);
+        TipoConsorcio tipo = tipoConsorcioRepository.save(new TipoConsorcio("Veiculos fila"));
 
         Consorcio consorcio = consorcioRepository.save(new Consorcio("Consorcio fila", tipo));
 
-        Grupo grupo = new Grupo();
-        grupo.setNumero("GRUPO-FILA");
-        grupo.setConsorcio(consorcio);
-        grupo = grupoRepository.save(grupo);
+        Grupo grupo = grupoRepository.save(new Grupo("GRUPO-FILA", consorcio, null, null));
 
-        Cota cota = new Cota();
-        cota.setNumero("COTA-FILA");
-        cota.setGrupo(grupo);
-        cota.setValorCredito(new java.math.BigDecimal("50000.00"));
-        cota = cotaRepository.save(cota);
+        Cota cota = cotaRepository.save(new Cota("COTA-FILA", grupo, new java.math.BigDecimal("50000.00")));
 
         Assembleia assembleia = Assembleia.builder()
                 .grupo(grupo)
