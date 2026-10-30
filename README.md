@@ -152,6 +152,7 @@ Para desenvolvimento com origens diferentes, ajuste `app.cors.allowed-origins` (
 
 Use HTTPS no site e no endpoint da API. Cadastre a origem HTTPS real em **Authorized JavaScript origins** e inclua-a em `CORS_ALLOWED_ORIGINS` somente se o browser chamar uma API de outra origem. Configure o mesmo Client ID em `VITE_GOOGLE_CLIENT_ID` durante o build do front-end e em `GOOGLE_CLIENT_ID` no servidor. Mantenha `JWT_SECRET`, credenciais do banco e outros segredos somente no servidor.
 
+- Relógio incorreto: mantenha Mac/host e Docker sincronizados com a hora de rede. Tokens Google expiram; depois de corrigir o relógio do host, reinicie o Docker Desktop e faça uma nova autenticação. Não aumente a tolerância de expiração para compensar horas de diferença.
 - `VITE_GOOGLE_CLIENT_ID` ausente: o login Google fica desabilitado e a tela mostra como configurar o Client ID.
 - Erro de origem: confira se esquema, domínio e porta do site aparecem exatamente nas origens JavaScript autorizadas.
 - Token rejeitado: confirme que front e back usam o mesmo Client ID e que o relógio do servidor está correto.

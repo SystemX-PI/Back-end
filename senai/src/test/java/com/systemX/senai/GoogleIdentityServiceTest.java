@@ -19,4 +19,16 @@ class GoogleIdentityServiceTest {
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
     }
+
+    @Test
+    void malformedGoogleTokensReturnAnExplicitUnauthorizedError() {
+        GoogleIdentityService service = new GoogleIdentityService("local-client.apps.googleusercontent.com");
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> service.verify("not-a-real-token"));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, error.getStatusCode());
+        assertEquals("O Google retornou uma autenticação inválida. Atualize a página e entre com Google novamente.",
+                error.getReason());
+    }
 }
