@@ -19,8 +19,8 @@ public class Cota {
 
     private boolean ativa = true;
 
-    /** Required by JPA. */
-    protected Cota() {
+    public Cota() {
+        // Required by JPA and used by the service layer when creating a new entity.
     }
 
     public Long getId() {

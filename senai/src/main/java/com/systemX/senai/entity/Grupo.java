@@ -17,8 +17,8 @@ public class Grupo {
     private Integer quantidadeCotas;
     private BigDecimal valorParcela;
 
-    /** Required by JPA. */
-    protected Grupo() {
+    public Grupo() {
+        // Required by JPA and used by the service layer when creating a new entity.
     }
 
     public Long getId() {

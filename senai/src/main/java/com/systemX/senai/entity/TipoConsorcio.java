@@ -10,8 +10,8 @@ public class TipoConsorcio {
     @Column(nullable = false, unique = true)
     private String nome;
 
-    /** Required by JPA. */
-    protected TipoConsorcio() {
+    public TipoConsorcio() {
+        // Required by JPA and used by the service layer when creating a new entity.
     }
 
     public Long getId() {
