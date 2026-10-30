@@ -17,7 +17,8 @@ public class Grupo {
     private Integer quantidadeCotas;
     private BigDecimal valorParcela;
 
-    public Grupo() {
+    /** Required by JPA. */
+    protected Grupo() {
     }
 
     public Long getId() {

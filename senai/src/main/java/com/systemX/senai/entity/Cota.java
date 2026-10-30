@@ -19,7 +19,8 @@ public class Cota {
 
     private boolean ativa = true;
 
-    public Cota() {
+    /** Required by JPA. */
+    protected Cota() {
     }
 
     public Long getId() {
