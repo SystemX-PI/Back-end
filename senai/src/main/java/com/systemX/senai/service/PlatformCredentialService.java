@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 @Service
 public class PlatformCredentialService {
+ private static final SecureRandom SECURE_RANDOM = new SecureRandom();
  private final SecretKeySpec key;
  public PlatformCredentialService(@Value("${app.credentials.key:${app.jwt.secret}}") String secret) {
   try { key = new SecretKeySpec(MessageDigest.getInstance("SHA-256").digest(secret.getBytes(StandardCharsets.UTF_8)), "AES"); }
@@ -19,7 +20,7 @@ public class PlatformCredentialService {
  }
  public String encrypt(String value) {
   try {
-   byte[] iv = new byte[12]; new SecureRandom().nextBytes(iv);
+   byte[] iv = new byte[12]; SECURE_RANDOM.nextBytes(iv);
    Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));
    return Base64.getEncoder().encodeToString(iv)+":"+Base64.getEncoder().encodeToString(cipher.doFinal(value.getBytes(StandardCharsets.UTF_8)));
   } catch(Exception e) { throw new IllegalStateException("Falha ao proteger credenciais.", e); }

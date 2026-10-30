@@ -12,7 +12,7 @@ public class TipoConsorcioService {
     private final TipoConsorcioRepository repository;
 
     public TipoConsorcioService(TipoConsorcioRepository repository) { this.repository = repository;  }
-    public TipoConsorcioResponse criar(TipoConsorcioRequest request) { return salvar(new TipoConsorcio(), request); }
+    public TipoConsorcioResponse criar(TipoConsorcioRequest request) { return toResponse(repository.save(new TipoConsorcio(request.nome()))); }
     @Transactional(readOnly = true)
     public List<TipoConsorcioResponse> listar() { return repository.findAll(Paginacao.pagina(0, 100)).stream().map(this::toResponse).toList(); }
     @Transactional(readOnly = true)
