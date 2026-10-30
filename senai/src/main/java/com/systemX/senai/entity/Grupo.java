@@ -17,8 +17,15 @@ public class Grupo {
     private Integer quantidadeCotas;
     private BigDecimal valorParcela;
 
-    public Grupo() {
-        // Required by JPA and used by the service layer when creating a new entity.
+    protected Grupo() {
+        // Required by JPA.
+    }
+
+    public Grupo(String numero, Consorcio consorcio, Integer quantidadeCotas, BigDecimal valorParcela) {
+        this.numero = numero;
+        this.consorcio = consorcio;
+        this.quantidadeCotas = quantidadeCotas;
+        this.valorParcela = valorParcela;
     }
 
     public Long getId() {

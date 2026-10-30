@@ -12,7 +12,11 @@ public class GrupoService {
     private final GrupoRepository repository;
     private final ConsorcioRepository consorcioRepository;
     public GrupoService(GrupoRepository repository, ConsorcioRepository consorcioRepository) { this.repository = repository; this.consorcioRepository = consorcioRepository; }
-    public GrupoResponse criar(GrupoRequest request) { return salvar(new Grupo(), request); }
+    public GrupoResponse criar(GrupoRequest request) {
+        var consorcio = consorcioRepository.findById(request.consorcioId())
+                .orElseThrow(() -> new ResourceNotFoundException("Consórcio nao encontrado: " + request.consorcioId()));
+        return toResponse(repository.save(new Grupo(request.numero(), consorcio, request.quantidadeCotas(), request.valorParcela())));
+    }
     @Transactional(readOnly = true)
     public List<GrupoResponse> listar() { return repository.findAll(Paginacao.pagina(0, 100)).stream().map(this::toResponse).toList(); }
     @Transactional(readOnly = true)
