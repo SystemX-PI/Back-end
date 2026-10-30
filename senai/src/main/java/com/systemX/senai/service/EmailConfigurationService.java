@@ -15,6 +15,7 @@ import com.systemX.senai.dto.EmailConfigurationResponse;
 
 @Service
 public class EmailConfigurationService {
+    private static final String TIMEOUT_MILLIS = "10000";
     private final AtomicReference<EmailSettings> settings = new AtomicReference<>();
 
     public EmailConfigurationResponse configure(EmailConfigurationRequest request) {
@@ -29,9 +30,9 @@ public class EmailConfigurationService {
         properties.put("mail.smtp.auth", "true");
         properties.put("mail.smtp.starttls.enable", "true");
         properties.put("mail.smtp.starttls.required", "true");
-        properties.put("mail.smtp.connectiontimeout", "10000");
-        properties.put("mail.smtp.timeout", "10000");
-        properties.put("mail.smtp.writetimeout", "10000");
+        properties.put("mail.smtp.connectiontimeout", TIMEOUT_MILLIS);
+        properties.put("mail.smtp.timeout", TIMEOUT_MILLIS);
+        properties.put("mail.smtp.writetimeout", TIMEOUT_MILLIS);
 
         try {
             sender.testConnection();
