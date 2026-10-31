@@ -18,6 +18,9 @@ import com.systemX.senai.dto.EvolutionStatusResponse;
 
 @Service
 public class EvolutionService {
+    private static final String API_KEY_HEADER = "apikey";
+    private static final String INSTANCE_FIELD = "instance";
+    private static final String STATE_FIELD = "state";
     private final RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String apiKey;
@@ -26,7 +29,7 @@ public class EvolutionService {
     public EvolutionService(
             @Value("${app.evolution.url:http://localhost:8081}") String baseUrl,
             @Value("${app.evolution.api-key:}") String apiKey) {
-        this.baseUrl = baseUrl.replaceAll("/+$", "");
+        this.baseUrl = removeTrailingSlashes(baseUrl);
         this.restClient = RestClient.builder().baseUrl(this.baseUrl).requestFactory(requestFactory()).build();
         this.apiKey = apiKey;
     }
@@ -36,7 +39,7 @@ public class EvolutionService {
         String encodedName = UriUtils.encodePathSegment(instanceName, StandardCharsets.UTF_8);
         JsonNode current = getConnection(instanceName, encodedName);
         if (isOpen(current)) {
-            return response(instanceName, current.path("instance").path("state").asText("open"), null, null, null);
+            return response(instanceName, current.path(INSTANCE_FIELD).path(STATE_FIELD).asText("open"), null, null, null);
         }
 
         JsonNode created = null;
@@ -79,7 +82,7 @@ public class EvolutionService {
         if (current == null) {
             return response(instanceName, "not_created", null, null, null);
         }
-        String state = current.path("instance").path("state").asText("unknown");
+        String state = current.path(INSTANCE_FIELD).path(STATE_FIELD).asText("unknown");
         return response(instanceName, state, null, null, null);
     }
 
@@ -89,7 +92,7 @@ public class EvolutionService {
         requireConfiguration();
         try {
             restClient.delete().uri(path + UriUtils.encodePathSegment(instanceName, StandardCharsets.UTF_8))
-                .header("apikey", apiKey).retrieve().toBodilessEntity();
+                .header(API_KEY_HEADER, apiKey).retrieve().toBodilessEntity();
         } catch (RestClientResponseException e) {
             if(e.getStatusCode().value()!=404) throw evolutionError(e);
         } catch(Exception e) {
@@ -97,7 +100,7 @@ public class EvolutionService {
         }
     }
 
-    private JsonNode getConnection(String instanceName, String encodedName) {
+    private JsonNode getConnection(String ignoredInstanceName, String encodedName) {
         try {
             return get("/instance/connectionState/" + encodedName);
         } catch (RestClientResponseException exception) {
@@ -111,7 +114,7 @@ public class EvolutionService {
     private JsonNode get(String path) {
         String body;
         try {
-            body = restClient.get().uri(path).header("apikey", apiKey).retrieve().body(String.class);
+            body = restClient.get().uri(path).header(API_KEY_HEADER, apiKey).retrieve().body(String.class);
         } catch (RestClientResponseException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -124,7 +127,7 @@ public class EvolutionService {
     private JsonNode post(String path, Object requestBody) {
         String body;
         try {
-            body = restClient.post().uri(path).header("apikey", apiKey).body(requestBody).retrieve()
+            body = restClient.post().uri(path).header(API_KEY_HEADER, apiKey).body(requestBody).retrieve()
                     .body(String.class);
         } catch (RestClientResponseException exception) {
             throw exception;
@@ -161,7 +164,7 @@ public class EvolutionService {
     }
 
     private boolean isOpen(JsonNode response) {
-        return response != null && "open".equalsIgnoreCase(response.path("instance").path("state").asText());
+        return response != null && "open".equalsIgnoreCase(response.path(INSTANCE_FIELD).path(STATE_FIELD).asText());
     }
 
     private String firstText(JsonNode node, String... paths) {
@@ -179,6 +182,14 @@ public class EvolutionService {
 
     private EvolutionStatusResponse response(String name, String state, String code, String qr, String pairingCode) {
         return new EvolutionStatusResponse(name, state, code, qr, pairingCode);
+    }
+
+    private String removeTrailingSlashes(String value) {
+        int end = value.length();
+        while (end > 0 && value.charAt(end - 1) == '/') {
+            end--;
+        }
+        return value.substring(0, end);
     }
     private static org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory() {
         var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();

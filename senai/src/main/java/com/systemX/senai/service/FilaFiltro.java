@@ -26,7 +26,9 @@ final class FilaFiltro {
                     cb.like(cb.lower(root.get("idExterno")), like, '\\'),
                     canal(root, query, cb, null, null, like));
                 try { termo = cb.or(termo, cb.equal(root.get("id"), Long.valueOf(q.trim()))); }
-                catch (NumberFormatException ignored) { }
+                catch (NumberFormatException ignored) {
+                    // The search term is not a numeric process identifier; text filters still apply.
+                }
             }
             return cb.and(canal(root, query, cb, null, null, null), filtro, termo);
         };

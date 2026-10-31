@@ -5,6 +5,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -41,6 +42,6 @@ public class GlobalExceptionHandler {
     }
 
     public record ApiError(int status, String message, LocalDateTime timestamp) {
-        ApiError(int status, String message) { this(status, message, LocalDateTime.now()); }
+        ApiError(int status, String message) { this(status, message, LocalDateTime.now(ZoneOffset.UTC)); }
     }
 }

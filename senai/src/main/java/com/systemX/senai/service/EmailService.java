@@ -10,29 +10,30 @@ import jakarta.mail.Transport;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 public class EmailService {
-    private volatile EmailCredentials credentials;
+    private final AtomicReference<EmailCredentials> credentials;
 
     public EmailService(
             @Value("${app.mail.enabled:false}") boolean enabled,
             @Value("${spring.mail.username:}") String from,
             @Value("${spring.mail.password:}") String password) {
-        this.credentials = new EmailCredentials(enabled, from, password);
+        this.credentials = new AtomicReference<>(new EmailCredentials(enabled, from, password));
     }
 
     public boolean isEnabled() {
-        EmailCredentials current = credentials;
+        EmailCredentials current = credentials.get();
         return current.enabled() && !current.from().isBlank() && !current.password().isBlank();
     }
 
     public void configure(String email, String appPassword) {
-        credentials = new EmailCredentials(true, email.trim(), appPassword.replaceAll("\\s", ""));
+        credentials.set(new EmailCredentials(true, email.trim(), appPassword.replaceAll("\\s", "")));
     }
 
     public void send(String recipient, String subject, String text) {
-        EmailCredentials current = credentials;
+        EmailCredentials current = credentials.get();
         if (!current.enabled() || current.from().isBlank() || current.password().isBlank()) {
             throw new IllegalStateException("E-mail nao configurado. Configure as credenciais de envio.");
         }

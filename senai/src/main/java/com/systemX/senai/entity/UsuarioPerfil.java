@@ -1,6 +1,7 @@
 package com.systemX.senai.entity;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -10,5 +11,5 @@ public class UsuarioPerfil {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @ManyToOne(fetch = FetchType.LAZY, optional = false) private Usuario usuario;
     @ManyToOne(fetch = FetchType.LAZY, optional = false) private Perfil perfil;
-    @Builder.Default private LocalDateTime criadoEm = LocalDateTime.now();
+    @Builder.Default private LocalDateTime criadoEm = LocalDateTime.now(ZoneOffset.UTC);
 }
