@@ -4,6 +4,7 @@ import com.systemX.senai.enums.StatusProcesso;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Entity @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class ProcessoContemplacao {
@@ -17,7 +18,7 @@ public class ProcessoContemplacao {
     public Usuario getCliente() { return cliente; }
     public void setCliente(Usuario cliente) { this.cliente = cliente; }
 
-    @Builder.Default private LocalDateTime criadoEm = LocalDateTime.now();
+    @Builder.Default private LocalDateTime criadoEm = LocalDateTime.now(ZoneOffset.UTC);
     private LocalDateTime atualizadoEm;
 
     public Long getId() { return id; }

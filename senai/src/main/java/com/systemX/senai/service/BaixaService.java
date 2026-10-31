@@ -1,6 +1,7 @@
 package com.systemX.senai.service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,11 +43,11 @@ public class BaixaService {
         Baixa baixa = new Baixa();
         baixa.setProcesso(processo);
         baixa.setUsuario(usuario);
-        baixa.setData(LocalDateTime.now());
+        baixa.setData(LocalDateTime.now(ZoneOffset.UTC));
         baixa.setObservacao(request.observacao());
         processo.setStatus(StatusProcesso.FINALIZADO);
         processo.setResponsavel(usuario);
-        processo.setAtualizadoEm(LocalDateTime.now());
+        processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
         processoRepository.save(processo);
         return toResponse(baixaRepository.save(baixa));
     }

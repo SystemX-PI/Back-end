@@ -3,6 +3,7 @@ package com.systemX.senai.service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -25,7 +26,6 @@ import com.systemX.senai.enums.CanalComunicacao;
 import com.systemX.senai.enums.StatusComunicacao;
 import com.systemX.senai.enums.StatusProcesso;
 import com.systemX.senai.enums.TipoUsuario;
-import com.systemX.senai.exception.InvalidCredentialsException;
 import com.systemX.senai.exception.ResourceNotFoundException;
 import com.systemX.senai.repository.AssembleiaRepository;
 import com.systemX.senai.repository.ComunicacaoRepository;
@@ -94,7 +94,7 @@ public class IntegracaoContempladoService {
                 .orElseThrow(() -> new ResourceNotFoundException("Nenhum usuário ativo para registrar a comunicação"));
 
         if (participacaoRepository.findByUsuarioIdAndCotaId(cliente.getId(), cota.getId()).isEmpty()) {
-                ParticipacaoCota participacao = ParticipacaoCota.criar(cliente, cota, LocalDate.now());
+                ParticipacaoCota participacao = ParticipacaoCota.criar(cliente, cota, LocalDate.now(ZoneOffset.UTC));
             participacaoRepository.save(participacao);
         }
 
@@ -109,7 +109,7 @@ public class IntegracaoContempladoService {
         processo.setCliente(cliente);
         processo.setResponsavel(responsavel);
         processo.setStatus(StatusProcesso.AGUARDANDO_COMUNICACAO);
-        processo.setAtualizadoEm(LocalDateTime.now());
+        processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
         processoRepository.save(processo);
 
         String assunto = "Sua contemplação foi confirmada";
@@ -123,7 +123,7 @@ public class IntegracaoContempladoService {
         comunicacao.setDestinatario(cliente.getEmail());
         comunicacao.setAssunto(assunto);
         comunicacao.setMensagem(mensagem);
-        comunicacao.setCriadaEm(LocalDateTime.now());
+        comunicacao.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
         comunicacaoRepository.save(comunicacao);
 
         Comunicacao comunicacaoWhatsApp = null;
@@ -134,10 +134,14 @@ public class IntegracaoContempladoService {
     }
 
     @Transactional(readOnly = true)
-    public List<FilaComunicacaoResponse> listarFila() { return listarFilaPagina(0, 100, "", "").items(); }
+    public List<FilaComunicacaoResponse> listarFila() { return listarFilaInterna(0, 100, "", "").items(); }
 
     @Transactional(readOnly = true)
     public com.systemX.senai.dto.PaginaResponse<FilaComunicacaoResponse> listarFilaPagina(int page, int size, String q, String status) {
+        return listarFilaInterna(page, size, q, status);
+    }
+
+    private com.systemX.senai.dto.PaginaResponse<FilaComunicacaoResponse> listarFilaInterna(int page, int size, String q, String status) {
         var processos = processoRepository.findAll(FilaFiltro.criar(q, status), Paginacao.pagina(page, size));
         var ids = processos.getContent().stream().map(ProcessoContemplacao::getId).toList();
         var canais = ids.isEmpty() ? List.<Comunicacao>of() : comunicacaoRepository.buscarUltimasEmLote(ids);
@@ -166,7 +170,7 @@ public class IntegracaoContempladoService {
         }
         if (email != null) {
             processo.setStatus(StatusProcesso.EM_COMUNICACAO);
-            processo.setAtualizadoEm(LocalDateTime.now());
+            processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
             processoRepository.save(processo);
             enviar(email);
         }
@@ -176,7 +180,7 @@ public class IntegracaoContempladoService {
         boolean comunicado = (email != null && email.getStatus() == StatusComunicacao.SUCESSO)
                 || (whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO);
         processo.setStatus(comunicado ? StatusProcesso.CLIENTE_CONTATADO : StatusProcesso.AGUARDANDO_COMUNICACAO);
-        processo.setAtualizadoEm(LocalDateTime.now());
+        processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
         processoRepository.save(processo);
         return toResponse(processoId, email, whatsapp);
     }
@@ -215,7 +219,7 @@ public class IntegracaoContempladoService {
         comunicacao.setResponsavel(responsavel);
         comunicacao.setDestinatario(telefone);
         comunicacao.setMensagem(mensagem);
-        comunicacao.setCriadaEm(LocalDateTime.now());
+        comunicacao.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
         return comunicacaoRepository.save(comunicacao);
     }
 
@@ -250,7 +254,7 @@ public class IntegracaoContempladoService {
                 emailService.send(comunicacao.getDestinatario(), comunicacao.getAssunto(), comunicacao.getMensagem());
             }
             comunicacao.setStatus(StatusComunicacao.SUCESSO);
-            comunicacao.setEnviadaEm(LocalDateTime.now());
+            comunicacao.setEnviadaEm(LocalDateTime.now(ZoneOffset.UTC));
             comunicacao.setErro(null);
         } catch (RuntimeException exception) {
             comunicacao.setStatus(StatusComunicacao.FALHA);
@@ -277,9 +281,14 @@ public class IntegracaoContempladoService {
     private ComunicacaoResponse toResponse(Long processoId, Comunicacao email, Comunicacao whatsapp) {
         boolean emailSucesso = email != null && email.getStatus() == StatusComunicacao.SUCESSO;
         boolean whatsappSucesso = whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO;
-        String statusGeral = emailSucesso && whatsappSucesso
-                ? "COMUNICADO_NOS_DOIS"
-                : emailSucesso || whatsappSucesso ? "COMUNICADO_PARCIAL" : "PENDENTE";
+        String statusGeral;
+        if (emailSucesso && whatsappSucesso) {
+            statusGeral = "COMUNICADO_NOS_DOIS";
+        } else if (emailSucesso || whatsappSucesso) {
+            statusGeral = "COMUNICADO_PARCIAL";
+        } else {
+            statusGeral = "PENDENTE";
+        }
         return new ComunicacaoResponse(processoId, statusGeral,
                 canalResponse(email), canalResponse(whatsapp));
     }
