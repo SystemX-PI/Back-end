@@ -51,6 +51,15 @@ As imagens são construídas **na máquina de cada colega** a partir do Git atua
 
 O cadastro público cria uma conta de cliente. Para criar um administrador local, copie `.env.example` para `.env` **somente se ainda não existir** e preencha `LOCAL_ADMIN_EMAIL` e `LOCAL_ADMIN_PASSWORD` (mínimo 10 caracteres). Reinicie o backend para aplicar. Senhas reais e `.env` não devem ser commitados. Recuperação por e-mail exige `MAIL_ENABLED`, `MAIL_USERNAME` e `MAIL_PASSWORD`; o restante funciona sem remetente configurado.
 
+Antes da primeira execução, crie o arquivo `.env` a partir de `.env.example` e defina uma senha forte para o PostgreSQL da Evolution API. O Client ID do Google já está informado no exemplo e é repassado pelo Compose ao frontend e ao backend:
+
+```env
+POSTGRES_PASSWORD=defina-uma-senha-forte-e-exclusiva
+GOOGLE_CLIENT_ID=115118555400-3fvpv6ldp5afs7gjjs5sppkoul2inrme.apps.googleusercontent.com
+```
+
+O `POSTGRES_PASSWORD` é obrigatório; o Compose interrompe a inicialização caso ele não esteja definido. Não inclua o arquivo `.env` no Git.
+
 A configuração padrão permite a primeira subida sem `.env`; os valores de desenvolvimento não servem para produção. QR Code ainda exige confirmação no aparelho. Pagamentos permanecem simulados.
 
 Para diagnosticar: `docker compose --profile full ps` e `docker compose --profile full logs --tail=80`. Se 5173 ou 8080 estiverem ocupadas por processos locais, pare esses processos antes de subir. O perfil `full` substitui a necessidade de iniciar `npm run dev` ou o Compose separado do frontend.
