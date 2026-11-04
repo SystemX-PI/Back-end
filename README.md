@@ -4,7 +4,7 @@ API REST da plataforma por contas de clientes: usuários da equipe, identidade d
 
 O cadastro e a demonstração incluem um WhatsApp e um Gmail. Somente a compra confirmada libera três WhatsApps e dois Gmails por 30 dias. Pix e cartão são simulados, com preço ilustrativo e sem cobrança real. O servidor valida o isolamento das contas e os limites.
 
-Consulte [o relatório completo da plataforma](RELATORIO_PLATAFORMA.md) e [as instruções locais](LOCAL.md). Os endpoints atuais ficam em `/api/platform`; o cadastro e o login ficam em `/api/auth`. As seções de consórcios abaixo documentam os módulos legados.
+Consulte o [relatório consolidado de alterações](relatorios%20de%20altera%C3%A7%C3%B5es/RELATORIO_CONSOLIDADO_ALTERACOES.md). Os endpoints atuais ficam em `/api/platform`; o cadastro e o login ficam em `/api/auth`. As seções de consórcios abaixo documentam os módulos legados.
 
 ## Subir o projeto completo com Docker
 
@@ -216,6 +216,64 @@ mvn test
 
 O roteiro completo de testes no Postman esta em [senai/GUIA_TESTES_POSTMAN.md](senai/GUIA_TESTES_POSTMAN.md).
 
+## Protocolo de qualidade com SonarQube
+
+Todo Pull Request para `develop` deve passar pelos testes Maven e por uma análise do SonarQube antes de ser aprovado. O projeto cadastrado no SonarQube local usa a chave **`systemX-backend-1`** e pode ser consultado em `http://localhost:9000/projects`.
+
+### 1. Subir o SonarQube localmente
+
+Se o serviço ainda não estiver em execução, use Docker Desktop:
+
+```powershell
+docker run -d --name sonarqube -p 9000:9000 sonarqube:community
+```
+
+Abra `http://localhost:9000`, conclua o primeiro acesso administrativo e crie ou selecione o projeto `systemX-backend-1`. Em **My Account → Security**, gere um token de análise. O token é uma credencial: não o coloque no Git, no README, em mensagens, nem no arquivo `.env` versionado.
+
+> Se o container `sonarqube` já existir, não execute o comando novamente. Para iniciá-lo, use `docker start sonarqube`.
+
+### 2. Executar a análise do backend
+
+No PowerShell, dentro da pasta `Back-end`, defina o token apenas na sessão atual e execute o Maven dentro de um container. Esse comando monta somente o módulo `senai`, executa os testes e envia a análise ao SonarQube local:
+
+```powershell
+$env:SONAR_TOKEN = "cole-o-token-gerado-no-sonarqube"
+
+docker run --rm `
+  -e SONAR_TOKEN `
+  -v "${PWD}\senai:/usr/src" `
+  -w /usr/src `
+  maven:3.9.9-eclipse-temurin-17 `
+  mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211:sonar `
+  "-Dsonar.projectKey=systemX-backend-1" `
+  "-Dsonar.projectName=SystemX Back-end" `
+  "-Dsonar.host.url=http://host.docker.internal:9000" `
+  "-Dsonar.token=$env:SONAR_TOKEN"
+```
+
+Ao concluir, abra o projeto no SonarQube para ver as issues, severidade, arquivo, linha, regra e o Quality Gate. A análise atual substitui os dados anteriores do mesmo projeto; não é necessário criar um projeto novo a cada execução.
+
+### 3. Integração com o Codex (IA)
+
+Para que o Codex consiga consultar as issues e aplicar a verificação de segredos antes de ler arquivos, instale e autentique a CLI uma vez no computador:
+
+```powershell
+sonar auth login -s http://localhost:9000
+sonar integrate codex --non-interactive
+```
+
+O primeiro comando abre o navegador para autenticação e guarda o token no armazenamento seguro do sistema. O segundo configura a integração do Codex, incluindo o acesso às consultas do SonarQube e os hooks de verificação. Docker Desktop deve estar aberto; depois da integração, reinicie a sessão do Codex se as ferramentas do SonarQube não aparecerem.
+
+Com a análise concluída, peça, por exemplo: **“liste as issues abertas do SonarQube”**, **“mostre o Quality Gate”** ou **“corrija a issue java:S3776 em StripeBillingService.java”**. Antes de corrigir uma issue de segurança, a alteração deve ser revisada para não reduzir a proteção da aplicação apenas para satisfazer a regra.
+
+### 4. Checklist antes do merge
+
+1. Atualizar a branch com `develop`.
+2. Executar `mvn test` ou o comando completo de análise acima.
+3. Verificar se o Quality Gate foi aprovado e se não foram introduzidas issues críticas.
+4. Revisar mudanças de segurança, banco, migrations e variáveis de ambiente.
+5. Registrar no Pull Request o que foi corrigido e como foi validado.
+
 ## Fluxo seguro de colaboracao
 
 As branches seguem esta regra:
@@ -314,11 +372,11 @@ A fila paginada usa `GET /api/integracoes/comunicacoes/fila/pagina?page=0&size=2
 Filtros: PENDENTE, FALHA, COMUNICADO_PARCIAL ou COMUNICADO_NOS_DOIS.
 As comunicacoes mais recentes dos processos da pagina sao buscadas em lote.
 
-Veja [LOCAL.md](LOCAL.md) para iniciar, reutilizar a imagem e configurar o primeiro administrador.
+Veja o [relatório consolidado de alterações](relatorios%20de%20altera%C3%A7%C3%B5es/RELATORIO_CONSOLIDADO_ALTERACOES.md) para iniciar, reutilizar a imagem e configurar o primeiro administrador.
 
 ## WhatsApp integrado na inicializacao
 
 O Compose inicia a Evolution API e suas dependencias com `docker compose up -d`.
 O backend recebe URL/chave internamente e aguarda a Evolution ficar saudavel.
 Depois do login administrativo, gere o QR em Integracoes > WhatsApp e escaneie no
-telefone. Veja [LOCAL.md](LOCAL.md) para portas, persistencia e limites locais.
+telefone. Veja o [relatório consolidado de alterações](relatorios%20de%20altera%C3%A7%C3%B5es/RELATORIO_CONSOLIDADO_ALTERACOES.md) para portas, persistencia e limites locais.
