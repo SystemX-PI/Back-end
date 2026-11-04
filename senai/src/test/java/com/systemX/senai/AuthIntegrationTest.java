@@ -158,6 +158,7 @@ class AuthIntegrationTest {
         String tokenFuncionario = "Bearer " + jwtService.generate(funcionario);
         mockMvc.perform(get("/api/consorcios/pagina").header("Authorization", tokenFuncionario)).andExpect(status().isOk());
         mockMvc.perform(get("/api/clientes/pagina").header("Authorization", tokenFuncionario)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/platform/context").header("Authorization", tokenFuncionario)).andExpect(status().isForbidden());
         mockMvc.perform(post("/api/consorcios").header("Authorization", tokenFuncionario)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"nome\":\"Negado\",\"tipoId\":1}"))
                 .andExpect(status().isForbidden());

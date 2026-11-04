@@ -120,6 +120,7 @@ public class PlatformService {
  }
  private PlatformInstance instance(Long accountId,Long id) { var a=account(accountId); return instances.findByIdAndContaId(id,a.getId()).orElseThrow(()->error(404,"Instância não encontrada.")); }
  public EvolutionStatusResponse status(Long accountId,Long id) {
+   manager();
    var i=instance(accountId,id);
    var s=evolution.getStatus(i.getRemoteName()); return new EvolutionStatusResponse(i.getNome(),s.state(),s.code(),s.qrCode(),s.pairingCode());
  }
