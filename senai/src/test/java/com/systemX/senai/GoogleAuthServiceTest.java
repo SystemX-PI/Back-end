@@ -136,8 +136,9 @@ class GoogleAuthServiceTest {
         when(users.lockByEmail(current.getEmail())).thenReturn(Optional.of(current));
         when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.of(owner));
 
+        String currentEmail = current.getEmail();
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
-                () -> auth.linkGoogle("valid-google-token", current.getEmail()));
+                () -> auth.linkGoogle("valid-google-token", currentEmail));
 
         assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
     }

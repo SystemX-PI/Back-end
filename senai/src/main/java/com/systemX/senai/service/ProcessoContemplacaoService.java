@@ -1,6 +1,7 @@
 package com.systemX.senai.service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,10 +36,10 @@ public class ProcessoContemplacaoService {
         historico.setStatusAnterior(processo.getStatus());
         historico.setNovoStatus(request.status());
         historico.setUsuario(usuario);
-        historico.setData(LocalDateTime.now());
+        historico.setData(LocalDateTime.now(ZoneOffset.UTC));
         historico.setObservacao(request.observacao());
         historicoRepository.save(historico);
-        processo.setStatus(request.status()); processo.setResponsavel(usuario); processo.setAtualizadoEm(LocalDateTime.now());
+        processo.setStatus(request.status()); processo.setResponsavel(usuario); processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
         return toResponse(repository.save(processo));
     }
     @Transactional(readOnly = true)

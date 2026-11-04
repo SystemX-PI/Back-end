@@ -21,7 +21,8 @@ public class ProfileService {
   validatePhoto(photo);var user=platform.currentUser();user.setNome(name.trim());user.setFoto(photo==null||photo.isBlank()?null:photo);users.save(user);
  }
  @Transactional public AuthResponse changePassword(String previous,String password) {
-  var me=platform.currentUser();var user=users.lockByEmail(me.getEmail()).orElseThrow();
+   var me=platform.currentUser();
+   var user=users.lockByEmail(me.getEmail()).orElseThrow();
   if(!encoder.matches(previous,user.getSenha())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"A senha atual está incorreta.");
   validatePassword(password);
   if(encoder.matches(password,user.getSenha()))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Escolha uma senha diferente da atual.");
@@ -38,9 +39,19 @@ public class ProfileService {
    if(photo.length()>400000||!photo.matches("^data:image/(png|jpeg);base64,[A-Za-z0-9+/=]+$")) throw new IllegalArgumentException();
    byte[] bytes=Base64.getDecoder().decode(photo.substring(photo.indexOf(',')+1));
    if(bytes.length>280000) throw new IllegalArgumentException();
-   try(var input=ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
-    var readers=ImageIO.getImageReaders(input);if(!readers.hasNext())throw new IllegalArgumentException();var reader=readers.next();
-    try{reader.setInput(input);if(reader.getWidth(0)>2048||reader.getHeight(0)>2048||reader.getWidth(0)<1||reader.getHeight(0)<1)throw new IllegalArgumentException();if(reader.read(0)==null)throw new IllegalArgumentException();}finally{reader.dispose();}
+    try(var input=ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+     var readers=ImageIO.getImageReaders(input);
+     if (!readers.hasNext()) {
+      throw new IllegalArgumentException();
+     }
+     var reader=readers.next();
+     try {
+      reader.setInput(input);
+      if(reader.getWidth(0)>2048||reader.getHeight(0)>2048||reader.getWidth(0)<1||reader.getHeight(0)<1)throw new IllegalArgumentException();
+      if(reader.read(0)==null)throw new IllegalArgumentException();
+     } finally {
+      reader.dispose();
+     }
    }
   }catch(Exception e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Envie uma foto PNG ou JPG válida, de até 280 KB e 2048 pixels.");}
  }

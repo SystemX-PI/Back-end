@@ -3,7 +3,6 @@ package com.systemX.senai.controller;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.security.Principal;
@@ -74,7 +73,7 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
     public record ForgotPassword(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Email @jakarta.validation.constraints.Size(max=255) String email) {}
-    public record ResetPassword(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Email @jakarta.validation.constraints.Size(max=255) String email,@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Pattern(regexp="[0-9]{8}") String token,@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(min=10,max=72) String newPassword) {}
+    public record ResetPassword(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Email @jakarta.validation.constraints.Size(max=255) String email,@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Pattern(regexp="\\d{8}") String token,@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(min=10,max=72) String newPassword) {}
     @PostMapping("/forgot-password") public Object forgot(@Valid @RequestBody ForgotPassword body,jakarta.servlet.http.HttpServletRequest request) {
         recovery.request(body.email(),request.getRemoteAddr());
         return java.util.Map.of("message","Se este e-mail estiver cadastrado, você receberá um código de recuperação.","expiresIn",300);
