@@ -41,10 +41,14 @@ class PlatformIntegrationTest {
  }
  @Test void membroNaoGerenciaContaERevogacaoInvalidaToken() throws Exception {
   var a=owner("owner-team@test.com");
+  String instanceResponse=mvc.perform(post("/api/platform/instances").header("Authorization",token(a)).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"restrita\"}"))
+      .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+  long instanceId=new com.fasterxml.jackson.databind.ObjectMapper().readTree(instanceResponse).path("id").asLong();
   mvc.perform(post("/api/platform/users").header("Authorization",token(a)).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Equipe\",\"email\":\"team@test.com\",\"password\":\"senha123\"}")).andExpect(status().isCreated());
   var member=users.findByEmail("team@test.com").orElseThrow(); String old=token(member);
   mvc.perform(get("/api/platform/context").header("Authorization",old)).andExpect(status().isOk()).andExpect(jsonPath("$.users.length()").value(1));
   mvc.perform(post("/api/platform/instances").header("Authorization",old).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"proibido\"}")).andExpect(status().isForbidden());
+  mvc.perform(get("/api/platform/instances/"+instanceId+"/status").header("Authorization",old)).andExpect(status().isForbidden());
   mvc.perform(put("/api/platform/users/"+member.getId()+"/active").header("Authorization",token(a)).contentType(MediaType.APPLICATION_JSON).content("{\"active\":false}")).andExpect(status().isNoContent());
   mvc.perform(get("/api/platform/context").header("Authorization",old)).andExpect(status().isUnauthorized());
  }
