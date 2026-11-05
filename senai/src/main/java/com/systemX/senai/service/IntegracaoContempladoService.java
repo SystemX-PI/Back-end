@@ -14,6 +14,7 @@ import com.systemX.senai.dto.CanalComunicacaoResponse;
 import com.systemX.senai.dto.ContempladoRequest;
 import com.systemX.senai.dto.IntegracaoResponse;
 import com.systemX.senai.dto.FilaComunicacaoResponse;
+import com.systemX.senai.dto.NotificationHistoryResponse;
 import com.systemX.senai.dto.WhatsAppRequest;
 import com.systemX.senai.entity.Assembleia;
 import com.systemX.senai.entity.Comunicacao;
@@ -149,6 +150,29 @@ public class IntegracaoContempladoService {
             return new FilaComunicacaoResponse(processo.getId(), processo.getOrigem(), processo.getIdExterno(),
                 processo.getStatus().name(), processo.getCriadoEm(), toResponse(processo.getId(), email, whatsapp));
         }));
+    }
+
+    @Transactional(readOnly = true)
+    public NotificationHistoryResponse historicoNotificacoes(LocalDate inicio, LocalDate fim, CanalComunicacao canal) {
+        if (inicio == null || fim == null || fim.isBefore(inicio)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "Informe um período válido.");
+        }
+        if (java.time.temporal.ChronoUnit.DAYS.between(inicio, fim) > 366) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "O período máximo da consulta é de 366 dias.");
+        }
+        var communications = comunicacaoRepository.findNotificationHistory(
+                inicio.atStartOfDay(), fim.plusDays(1).atStartOfDay(), canal);
+        long accepted = communications.stream().filter(c -> c.getStatus() == StatusComunicacao.SUCESSO
+                || c.getStatus() == StatusComunicacao.REALIZADA).count();
+        long failed = communications.stream().filter(c -> c.getStatus() == StatusComunicacao.FALHA).count();
+        long pending = communications.size() - accepted - failed;
+        var items = communications.stream().limit(20).map(c -> new NotificationHistoryResponse.Item(
+                c.getId(), c.getProcesso().getId(), c.getProcesso().getIdExterno(), c.getCanal().name(),
+                c.getStatus().name(), c.getDestinatario(), c.getCriadaEm(), c.getEnviadaEm(), c.getErro())).toList();
+        return new NotificationHistoryResponse(inicio, fim, canal == null ? "TODOS" : canal.name(),
+                communications.size(), accepted, pending, failed, items);
     }
 
     @Transactional

@@ -31,6 +31,19 @@ class PlatformIntegrationTest {
   mvc.perform(get("/api/usuarios").header("Authorization",token(a))).andExpect(status().isForbidden());
   assertTrue(accounts.findById(a.getContaId()).orElseThrow().getTrialEndsAt().isAfter(Instant.now().plusSeconds(259100)));
  }
+ @Test void historicoDeNotificacoesExigeSessaoEIsolaConsultaPorConta() throws Exception {
+  var a=owner("notifications-a@test.com"); var b=owner("notifications-b@test.com");
+  mvc.perform(get("/api/platform/notification-history?start=2026-11-01&end=2026-11-05")
+      .header("Authorization",token(a)))
+    .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0))
+    .andExpect(jsonPath("$.accepted").value(0)).andExpect(jsonPath("$.items.length()").value(0));
+  mvc.perform(get("/api/platform/notification-history?accountId="+b.getContaId()+"&start=2026-11-01&end=2026-11-05")
+      .header("Authorization",token(a)))
+    .andExpect(status().isNotFound());
+  mvc.perform(get("/api/platform/notification-history?start=2026-11-05&end=2026-11-01")
+      .header("Authorization",token(a)))
+    .andExpect(status().isBadRequest());
+ }
  @Test void testeExpiradoBloqueiaEscritaESimulacaoLibera() throws Exception {
   var a=owner("trial@test.com"); var account=accounts.findById(a.getContaId()).orElseThrow(); account.setTrialEndsAt(Instant.now().minusSeconds(1)); accounts.saveAndFlush(account);
   mvc.perform(post("/api/platform/instances").header("Authorization",token(a)).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"suporte\"}")).andExpect(status().isPaymentRequired());

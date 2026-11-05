@@ -10,13 +10,27 @@ public class PlatformController {
  private final com.systemX.senai.service.ProfileService profile;
  private final com.systemX.senai.service.PlatformCheckoutService checkout;
  private final com.systemX.senai.service.StripeBillingService stripe;
- public PlatformController(PlatformService service,com.systemX.senai.service.PlatformCheckoutService checkout,com.systemX.senai.service.ProfileService profile,com.systemX.senai.service.StripeBillingService stripe) { this.service=service; this.checkout=checkout; this.profile=profile; this.stripe=stripe; }
+ private final com.systemX.senai.repository.ComunicacaoRepository communications;
+ public PlatformController(PlatformService service,com.systemX.senai.service.PlatformCheckoutService checkout,com.systemX.senai.service.ProfileService profile,com.systemX.senai.service.StripeBillingService stripe,com.systemX.senai.repository.ComunicacaoRepository communications) { this.service=service; this.checkout=checkout; this.profile=profile; this.stripe=stripe; this.communications=communications; }
  public record Person(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(min=6,max=100) String password) {}
  public record Instance(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,60}") String name) {}
  public record Mailbox(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(max=200) String password) {}
  public record Brand(@NotBlank @Size(max=120) String name,@Size(max=400000) @Pattern(regexp="^(data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)?$") String logo,@NotBlank @Pattern(regexp="#[0-9a-fA-F]{6}") String primary,@NotBlank @Pattern(regexp="#[0-9a-fA-F]{6}") String accent) {}
  public record Active(boolean active) {}
  @GetMapping("/context") public Object context(@RequestParam(required=false) Long accountId) { return service.context(accountId); }
+ @GetMapping("/notification-history") public com.systemX.senai.dto.NotificationHistoryResponse notificationHistory(
+   @RequestParam(required=false) Long accountId,
+   @RequestParam java.time.LocalDate start,
+   @RequestParam java.time.LocalDate end,
+   @RequestParam(required=false) com.systemX.senai.enums.CanalComunicacao channel) {
+  if(start==null||end==null||end.isBefore(start)||java.time.temporal.ChronoUnit.DAYS.between(start,end)>366) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Informe um período válido de até 366 dias.");
+  Long scopedAccount=service.account(accountId).getId();
+  var rows=communications.findAccountNotificationHistory(scopedAccount,start.atStartOfDay(),end.plusDays(1).atStartOfDay(),channel);
+  long accepted=rows.stream().filter(c->c.getStatus()==com.systemX.senai.enums.StatusComunicacao.SUCESSO||c.getStatus()==com.systemX.senai.enums.StatusComunicacao.REALIZADA).count();
+  long failed=rows.stream().filter(c->c.getStatus()==com.systemX.senai.enums.StatusComunicacao.FALHA).count();
+  var items=rows.stream().limit(20).map(c->new com.systemX.senai.dto.NotificationHistoryResponse.Item(c.getId(),c.getProcesso().getId(),c.getProcesso().getIdExterno(),c.getCanal().name(),c.getStatus().name(),c.getDestinatario(),c.getCriadaEm(),c.getEnviadaEm(),c.getErro())).toList();
+  return new com.systemX.senai.dto.NotificationHistoryResponse(start,end,channel==null?"TODOS":channel.name(),rows.size(),accepted,rows.size()-accepted-failed,failed,items);
+ }
  @GetMapping("/clients") public Object clients() { return service.clients(); }
  @PostMapping("/clients") @ResponseStatus(HttpStatus.CREATED) public Object client(@Valid @RequestBody Person p) { return service.createClient(p.name(),p.email(),p.password()); }
  @PutMapping("/clients/{id}/active") @ResponseStatus(HttpStatus.NO_CONTENT) public void clientActive(@PathVariable Long id,@RequestBody Active p) { service.suspend(id,!p.active()); }

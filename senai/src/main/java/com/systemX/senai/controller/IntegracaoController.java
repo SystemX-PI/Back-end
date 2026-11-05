@@ -18,6 +18,8 @@ import com.systemX.senai.dto.ContempladoRequest;
 import com.systemX.senai.dto.IntegracaoResponse;
 import com.systemX.senai.dto.FilaComunicacaoResponse;
 import com.systemX.senai.dto.WhatsAppRequest;
+import com.systemX.senai.dto.NotificationHistoryResponse;
+import com.systemX.senai.enums.CanalComunicacao;
 import com.systemX.senai.service.BaixaService;
 import com.systemX.senai.service.IntegracaoContempladoService;
 
@@ -53,6 +55,14 @@ public class IntegracaoController {
     @GetMapping("/comunicacoes/fila")
     public List<FilaComunicacaoResponse> fila() {
         return integracaoService.listarFila();
+    }
+
+    @GetMapping("/comunicacoes/historico")
+    public NotificationHistoryResponse historico(
+            @org.springframework.web.bind.annotation.RequestParam java.time.LocalDate inicio,
+            @org.springframework.web.bind.annotation.RequestParam java.time.LocalDate fim,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) CanalComunicacao canal) {
+        return integracaoService.historicoNotificacoes(inicio, fim, canal);
     }
 
     @GetMapping("/comunicacoes/fila/pagina")
