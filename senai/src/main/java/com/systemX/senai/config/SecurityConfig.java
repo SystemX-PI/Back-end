@@ -51,6 +51,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/auth/google/link").authenticated()
                     .requestMatchers("/api/auth/**").permitAll()
+                    .requestMatchers("/api/assistente/**").hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO)
                     .requestMatchers(HttpMethod.POST, "/api/platform/webhooks/stripe").permitAll()
                     .requestMatchers("/api/platform/clients/**").hasRole(ROLE_ADMINISTRADOR)
                     .requestMatchers("/api/platform/**").hasAnyRole(ROLE_ADMINISTRADOR, "CLIENTE", "USUARIO")
