@@ -30,12 +30,15 @@ public class IntegracaoController {
     private final IntegracaoContempladoService integracaoService;
     private final BaixaService baixaService;
     private final String integrationKey;
+    private final com.systemX.senai.service.NotificationHistoryService notifications;
 
     public IntegracaoController(IntegracaoContempladoService integracaoService, BaixaService baixaService,
-            @Value("${app.integration.api-key:}") String integrationKey) {
+            @Value("${app.integration.api-key:}") String integrationKey,
+            com.systemX.senai.service.NotificationHistoryService notifications) {
         this.integracaoService = integracaoService;
         this.baixaService = baixaService;
         this.integrationKey = integrationKey;
+        this.notifications = notifications;
     }
 
     @PostMapping("/contemplacoes")
@@ -53,6 +56,15 @@ public class IntegracaoController {
     @GetMapping("/comunicacoes/fila")
     public List<FilaComunicacaoResponse> fila() {
         return integracaoService.listarFila();
+    }
+
+    @GetMapping("/comunicacoes/historico")
+    public com.systemX.senai.dto.NotificationHistoryResponse historico(
+            @org.springframework.web.bind.annotation.RequestParam java.time.LocalDate inicio,
+            @org.springframework.web.bind.annotation.RequestParam java.time.LocalDate fim,
+            @org.springframework.web.bind.annotation.RequestParam(required = false)
+            com.systemX.senai.enums.CanalComunicacao canal) {
+        return notifications.history(null, inicio, fim, canal);
     }
 
     @GetMapping("/comunicacoes/fila/pagina")

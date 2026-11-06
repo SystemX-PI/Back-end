@@ -10,13 +10,21 @@ public class PlatformController {
  private final com.systemX.senai.service.ProfileService profile;
  private final com.systemX.senai.service.PlatformCheckoutService checkout;
  private final com.systemX.senai.service.StripeBillingService stripe;
- public PlatformController(PlatformService service,com.systemX.senai.service.PlatformCheckoutService checkout,com.systemX.senai.service.ProfileService profile,com.systemX.senai.service.StripeBillingService stripe) { this.service=service; this.checkout=checkout; this.profile=profile; this.stripe=stripe; }
+ private final com.systemX.senai.service.NotificationHistoryService notifications;
+ public PlatformController(PlatformService service,com.systemX.senai.service.PlatformCheckoutService checkout,com.systemX.senai.service.ProfileService profile,com.systemX.senai.service.StripeBillingService stripe,com.systemX.senai.service.NotificationHistoryService notifications) { this.service=service; this.checkout=checkout; this.profile=profile; this.stripe=stripe; this.notifications=notifications; }
  public record Person(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(min=6,max=100) String password) {}
  public record Instance(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,60}") String name) {}
  public record Mailbox(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(max=200) String password) {}
  public record Brand(@NotBlank @Size(max=120) String name,@Size(max=400000) @Pattern(regexp="^(data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)?$") String logo,@NotBlank @Pattern(regexp="#[0-9a-fA-F]{6}") String primary,@NotBlank @Pattern(regexp="#[0-9a-fA-F]{6}") String accent) {}
  public record Active(boolean active) {}
  @GetMapping("/context") public Object context(@RequestParam(required=false) Long accountId) { return service.context(accountId); }
+ @GetMapping("/notification-history") public com.systemX.senai.dto.NotificationHistoryResponse notificationHistory(
+   @RequestParam(required=false) Long accountId,
+   @RequestParam java.time.LocalDate start,
+   @RequestParam java.time.LocalDate end,
+   @RequestParam(required=false) com.systemX.senai.enums.CanalComunicacao channel) {
+  return notifications.history(service.account(accountId).getId(), start, end, channel);
+ }
  @GetMapping("/clients") public Object clients() { return service.clients(); }
  @PostMapping("/clients") @ResponseStatus(HttpStatus.CREATED) public Object client(@Valid @RequestBody Person p) { return service.createClient(p.name(),p.email(),p.password()); }
  @PutMapping("/clients/{id}/active") @ResponseStatus(HttpStatus.NO_CONTENT) public void clientActive(@PathVariable Long id,@RequestBody Active p) { service.suspend(id,!p.active()); }
