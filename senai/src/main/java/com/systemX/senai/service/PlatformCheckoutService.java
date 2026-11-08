@@ -16,8 +16,9 @@ public class PlatformCheckoutService {
  private final PlatformAccountRepository accounts;
  private final PlatformPlans plans;
  private final boolean simulation;
- public PlatformCheckoutService(PlatformService platform,PlatformCheckoutRepository orders,PlatformAccountRepository accounts,PlatformPlans plans,@Value("${app.billing.simulation-enabled:false}") boolean simulation) {
-  this.platform=platform;this.orders=orders;this.accounts=accounts;this.plans=plans;this.simulation=simulation;
+ public PlatformCheckoutService(PlatformService platform,PlatformCheckoutRepository orders,PlatformAccountRepository accounts,PlatformPlans plans,@Value("${app.billing.simulation-enabled:false}") boolean simulation,
+     @Value("${app.billing.stripe.enabled:false}") boolean stripeEnabled) {
+  this.platform=platform;this.orders=orders;this.accounts=accounts;this.plans=plans;this.simulation=simulation&&!stripeEnabled;
  }
  private void allowed() {
   if(!simulation) throw error(403,"Compra simulada indisponível neste ambiente.");

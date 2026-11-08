@@ -23,7 +23,9 @@ import com.stripe.param.SubscriptionRetrieveParams;
 import com.stripe.param.checkout.SessionRetrieveParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
@@ -76,6 +78,11 @@ public class StripeBillingService {
 
     @Transactional
     public Map<String, Object> createCheckout(Long requestedAccountId) {
+        return createCheckout(requestedAccountId, false);
+    }
+
+    @Transactional
+    public Map<String, Object> createCheckout(Long requestedAccountId, boolean pix) {
         if (!enabled || stripe == null) throw error(503, "Checkout mensal ainda não configurado.");
         var user = platform.currentUser();
         if (user.getTipo() != TipoUsuario.CLIENTE && user.getTipo() != TipoUsuario.ADMINISTRADOR)
@@ -84,15 +91,26 @@ public class StripeBillingService {
         if (account.isSuspended()) throw error(403, "Conta suspensa.");
         if (account.isProfessional() && account.getPaidUntil() != null && account.getPaidUntil().isAfter(Instant.now()))
             throw error(409, "A assinatura Profissional já está ativa.");
-        if (account.getStripeSubscriptionId() != null && (STATUS_ACTIVE.equals(account.getStripeSubscriptionStatus())
-                || "trialing".equals(account.getStripeSubscriptionStatus())))
-            throw error(409, "Já existe uma assinatura ativa para esta conta.");
+        if (account.getStripeSubscriptionId() != null && !"canceled".equals(account.getStripeSubscriptionStatus())
+                && !"incomplete_expired".equals(account.getStripeSubscriptionStatus()))
+            throw error(409, "Já existe uma assinatura para esta conta. Gerencie a assinatura no Stripe.");
         try {
+            if (account.getStripePixSessionId() != null) {
+                Session existing = stripe.v1().checkout().sessions().retrieve(account.getStripePixSessionId());
+                if ("open".equals(existing.getStatus()) && pix) return checkoutView(existing.getUrl(), true);
+                if (!"expired".equals(existing.getStatus()))
+                    throw error(409, "Já existe um Pix em andamento. Volte à assinatura para atualizar o status.");
+                clearPix(account);
+            }
             if (account.getStripeCheckoutSessionId() != null && account.getStripeCheckoutExpiresAt() != null
                     && account.getStripeCheckoutExpiresAt().isAfter(Instant.now())) {
                 Session existing = stripe.v1().checkout().sessions().retrieve(account.getStripeCheckoutSessionId());
-                if ("open".equals(existing.getStatus())) return checkoutView(existing.getUrl());
+                if ("open".equals(existing.getStatus()) && !pix) return checkoutView(existing.getUrl(), false);
+                if (!"expired".equals(existing.getStatus()))
+                    throw error(409, "Já existe um checkout por cartão em andamento.");
             }
+            account.setStripeSubscriptionId(null);
+            account.setStripeSubscriptionStatus(null);
             Price price = stripe.v1().prices().retrieve(priceId, PriceRetrieveParams.builder().build());
             if (!Boolean.TRUE.equals(price.getActive()) || price.getUnitAmount() == null || price.getUnitAmount() != monthlyPriceCents
                     || !"brl".equalsIgnoreCase(price.getCurrency()) || price.getRecurring() == null
@@ -114,32 +132,54 @@ public class StripeBillingService {
             var subscriptionData = SessionCreateParams.SubscriptionData.builder()
                     .putMetadata(METADATA_PLATFORM_ACCOUNT_ID, account.getId().toString()).build();
             var params = SessionCreateParams.builder()
-                    .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
                     .setCustomer(customerId)
                     .setClientReferenceId(account.getId().toString())
-                    .setSuccessUrl(successUrl)
-                    .setCancelUrl(cancelUrl)
-                    .setSubscriptionData(subscriptionData)
-                    .addLineItem(SessionCreateParams.LineItem.builder().setPrice(priceId).setQuantity(1L).build())
-                    .build();
-            Session session = stripe.v1().checkout().sessions().create(params,
+                    .setSuccessUrl(accountUrl(successUrl, requestedAccountId))
+                    .setCancelUrl(accountUrl(cancelUrl, requestedAccountId));
+            if (pix) {
+                var product = SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                        .setName("SystemX Profissional · 30 dias").build();
+                var priceData = SessionCreateParams.LineItem.PriceData.builder()
+                        .setCurrency("brl").setUnitAmount((long) monthlyPriceCents).setProductData(product).build();
+                params.setMode(SessionCreateParams.Mode.PAYMENT)
+                        .putExtraParam("payment_method_types", List.of("pix"))
+                        .addLineItem(SessionCreateParams.LineItem.builder().setPriceData(priceData).setQuantity(1L).build());
+            } else {
+                params.setMode(SessionCreateParams.Mode.SUBSCRIPTION)
+                        .putExtraParam("payment_method_types", List.of("card"))
+                        .setSubscriptionData(subscriptionData)
+                        .addLineItem(SessionCreateParams.LineItem.builder().setPrice(priceId).setQuantity(1L).build());
+            }
+            Session session = stripe.v1().checkout().sessions().create(params.build(),
                     RequestOptions.builder().setIdempotencyKey("systemx-checkout-" + account.getId() + "-" + UUID.randomUUID()).build());
-            account.setStripeCheckoutSessionId(session.getId());
-            account.setStripeCheckoutExpiresAt(Instant.ofEpochSecond(session.getExpiresAt()));
+            if (pix) {
+                account.setStripePixSessionId(session.getId());
+                account.setStripePixAmountCents(monthlyPriceCents);
+            } else {
+                account.setStripeCheckoutSessionId(session.getId());
+                account.setStripeCheckoutExpiresAt(Instant.ofEpochSecond(session.getExpiresAt()));
+            }
             accounts.save(account);
-            return checkoutView(session.getUrl());
+            return checkoutView(session.getUrl(), pix);
         } catch (StripeException ex) {
-            throw error(502, "Não foi possível iniciar o checkout no Stripe.");
+            throw error(502, pix ? "Não foi possível gerar o Pix. Verifique se o Pix está habilitado na conta Stripe."
+                    : "Não foi possível iniciar o checkout no Stripe.");
         }
     }
 
-    private Map<String, Object> checkoutView(String url) {
+    private String accountUrl(String url, Long accountId) {
+        if (accountId == null) return url;
+        return org.springframework.web.util.UriComponentsBuilder.fromUriString(url)
+                .replaceQueryParam("account", accountId).build().toUriString();
+    }
+
+    private Map<String, Object> checkoutView(String url, boolean pix) {
         var response = new LinkedHashMap<String, Object>();
         response.put("checkoutUrl", url);
         response.put(FIELD_STATUS, "PENDING");
         response.put("amountCents", monthlyPriceCents);
         response.put("currency", "BRL");
-        response.put("interval", INTERVAL_MONTH);
+        response.put("interval", pix ? "once" : INTERVAL_MONTH);
         response.put("simulation", false);
         return response;
     }
@@ -179,6 +219,14 @@ public class StripeBillingService {
 
         String subscriptionId = account.getStripeSubscriptionId();
         try {
+            if (account.getStripePixSessionId() != null) {
+                var session = stripe.v1().checkout().sessions().retrieve(account.getStripePixSessionId());
+                if (confirmPix(account, session.getId(), session.getClientReferenceId(), session.getMode(),
+                        session.getPaymentStatus(), session.getCurrency(), session.getAmountTotal())) {
+                    return subscriptionView(true, "pix_paid", account.getPaidUntil());
+                }
+                return subscriptionView(false, session.getPaymentStatus(), null);
+            }
             if (account.getStripeCheckoutSessionId() != null) {
                 Session session = stripe.v1().checkout().sessions().retrieve(
                         account.getStripeCheckoutSessionId(), SessionRetrieveParams.builder().build());
@@ -259,6 +307,7 @@ public class StripeBillingService {
 
     @Transactional
     public void verifyAndProcess(String payload, String signature) {
+        if (!enabled) throw error(400, "Webhook Stripe indisponível.");
         final Event event;
         try {
             event = Webhook.constructEvent(payload, signature, webhookSecret);
@@ -268,12 +317,18 @@ public class StripeBillingService {
         process(event, payload);
     }
 
+    @Transactional
     public void process(Event event, String payload) {
         if (events.existsById(event.getId())) return;
         try {
             JsonNode object = json.readTree(payload).path("data").path("object");
             switch (event.getType()) {
-                case "checkout.session.completed" -> checkoutCompleted(object);
+                case "checkout.session.completed" -> {
+                    if ("payment".equals(text(object.path("mode")))) pixEvent(object, true);
+                    else checkoutCompleted(object);
+                }
+                case "checkout.session.async_payment_succeeded" -> pixEvent(object, true);
+                case "checkout.session.async_payment_failed", "checkout.session.expired" -> pixEvent(object, false);
                 case "invoice.paid" -> invoicePaid(object);
                 case "invoice.payment_failed" -> invoiceFailed(object);
                 case "customer.subscription.updated" -> subscriptionUpdated(object);
@@ -290,6 +345,49 @@ public class StripeBillingService {
         }
     }
 
+    private void pixEvent(JsonNode session, boolean succeeded) {
+        String accountId = text(session.path("client_reference_id"));
+        String sessionId = text(session.path("id"));
+        if (!"payment".equals(text(session.path("mode"))) || sessionId == null
+                || accountId == null || !accountId.matches("[0-9]{1,18}")) return;
+        accounts.lockById(Long.valueOf(accountId)).ifPresent(account -> {
+            if (!sessionId.equals(account.getStripePixSessionId())) return;
+            if (succeeded) {
+                confirmPix(account, sessionId, accountId, text(session.path("mode")),
+                        text(session.path("payment_status")), text(session.path("currency")),
+                        session.path("amount_total").asLong(-1));
+            } else {
+                clearPix(account);
+            }
+        });
+    }
+
+    private boolean confirmPix(PlatformAccount account, String sessionId, String accountId, String mode,
+            String paymentStatus, String currency, Long amount) {
+        if (!"paid".equals(paymentStatus)) return false;
+        if (account.getStripePixSessionId() == null || !account.getStripePixSessionId().equals(sessionId)
+                || !account.getId().toString().equals(accountId) || !"payment".equals(mode)
+                || !"brl".equalsIgnoreCase(currency) || amount == null || account.getStripePixAmountCents() == null
+                || amount.longValue() != account.getStripePixAmountCents().longValue())
+            throw error(409, "O Pix confirmado não corresponde ao pedido da conta.");
+        account.setProfessional(true);
+        Instant now = Instant.now();
+        Instant start = account.getPaidUntil() != null && account.getPaidUntil().isAfter(now)
+                ? account.getPaidUntil() : now;
+        Instant paidUntil = start.plus(30, ChronoUnit.DAYS);
+        account.setPaidUntil(paidUntil);
+        account.setStripePixPaidUntil(paidUntil);
+        account.setStripeSubscriptionId(null);
+        account.setStripeSubscriptionStatus(null);
+        clearPix(account);
+        return true;
+    }
+
+    private void clearPix(PlatformAccount account) {
+        account.setStripePixSessionId(null);
+        account.setStripePixAmountCents(null);
+    }
+
     private void checkoutCompleted(JsonNode session) {
         String accountId = text(session.path("metadata").path(METADATA_PLATFORM_ACCOUNT_ID));
         if (accountId == null) accountId = text(session.path("client_reference_id"));
@@ -299,8 +397,8 @@ public class StripeBillingService {
         if (account == null || subscriptionId == null) return;
         if (!account.getId().toString().equals(accountId) && accountId != null) return;
         String sessionId = text(session.path("id"));
-        if (account.getStripeCheckoutSessionId() != null && sessionId != null
-                && !account.getStripeCheckoutSessionId().equals(sessionId)) return;
+        if (sessionId == null || !sessionId.equals(account.getStripeCheckoutSessionId())
+                || subscriptionId.equals(account.getStripeSubscriptionId())) return;
         if (customerId != null) account.setStripeCustomerId(customerId);
         account.setStripeSubscriptionId(subscriptionId);
         account.setStripeSubscriptionStatus("incomplete");
@@ -309,17 +407,22 @@ public class StripeBillingService {
         accounts.save(account);
     }
 
-    private void invoicePaid(JsonNode invoice) {
+    private void invoicePaid(JsonNode invoice) throws StripeException {
         if (!invoiceHasMonthlyPrice(invoice)) return;
         String subscriptionId = subscriptionId(invoice);
         var account = findAccount(null, text(invoice.path(FIELD_CUSTOMER)), subscriptionId);
-        if (account == null) return;
-        if (account.getStripeSubscriptionId() != null && subscriptionId != null
-                && !account.getStripeSubscriptionId().equals(subscriptionId)) return;
+        if (!matchesSubscription(account, subscriptionId)) {
+            if (account == null || subscriptionId == null || account.getStripeSubscriptionId() != null
+                    || account.getStripeCheckoutSessionId() == null) return;
+            var session = stripe.v1().checkout().sessions().retrieve(account.getStripeCheckoutSessionId());
+            if (!subscriptionId.equals(session.getSubscription())) return;
+        }
         Instant periodEnd = invoicePeriodEnd(invoice);
         if (periodEnd == null || !periodEnd.isAfter(Instant.now())) return;
         if (subscriptionId != null) account.setStripeSubscriptionId(subscriptionId);
         account.setStripeSubscriptionStatus(STATUS_ACTIVE);
+        account.setStripeCheckoutSessionId(null);
+        account.setStripeCheckoutExpiresAt(null);
         account.setProfessional(true);
         account.setPaidUntil(periodEnd);
         accounts.save(account);
@@ -328,17 +431,15 @@ public class StripeBillingService {
     private void invoiceFailed(JsonNode invoice) {
         String subscriptionId = subscriptionId(invoice);
         var account = findAccount(null, text(invoice.path(FIELD_CUSTOMER)), subscriptionId);
-        if (account != null && account.getStripeSubscriptionId() != null && subscriptionId != null
-                && !account.getStripeSubscriptionId().equals(subscriptionId)) return;
-        if (account != null) { account.setStripeSubscriptionStatus("past_due"); accounts.save(account); }
+        if (!matchesSubscription(account, subscriptionId)) return;
+        account.setStripeSubscriptionStatus("past_due");
+        accounts.save(account);
     }
 
     private void subscriptionUpdated(JsonNode subscription) {
         String subscriptionId = text(subscription.path("id"));
         var account = findAccount(null, text(subscription.path(FIELD_CUSTOMER)), subscriptionId);
-        if (account == null) return;
-        if (account.getStripeSubscriptionId() != null && subscriptionId != null
-                && !account.getStripeSubscriptionId().equals(subscriptionId)) return;
+        if (!matchesSubscription(account, subscriptionId)) return;
         if (subscriptionId != null) account.setStripeSubscriptionId(subscriptionId);
         String status = text(subscription.path(FIELD_STATUS));
         account.setStripeSubscriptionStatus(status);
@@ -348,9 +449,7 @@ public class StripeBillingService {
     private void subscriptionDeleted(JsonNode subscription) {
         String subscriptionId = text(subscription.path("id"));
         var account = findAccount(null, text(subscription.path(FIELD_CUSTOMER)), subscriptionId);
-        if (account == null) return;
-        if (account.getStripeSubscriptionId() != null && subscriptionId != null
-                && !account.getStripeSubscriptionId().equals(subscriptionId)) return;
+        if (!matchesSubscription(account, subscriptionId)) return;
         account.setStripeSubscriptionStatus("canceled");
         account.setProfessional(false);
         account.setPaidUntil(Instant.now());
@@ -359,12 +458,21 @@ public class StripeBillingService {
 
     private PlatformAccount findAccount(String accountId, String customerId, String subscriptionId) {
         if (accountId != null) {
-            try { var found = accounts.findById(Long.parseLong(accountId)); if (found.isPresent()) return found.get(); }
+            try { var found = accounts.lockById(Long.parseLong(accountId)); if (found.isPresent()) return found.get(); }
             catch (NumberFormatException ignored) { }
         }
-        if (customerId != null) { var found = accounts.findByStripeCustomerId(customerId); if (found.isPresent()) return found.get(); }
-        if (subscriptionId != null) return accounts.findByStripeSubscriptionId(subscriptionId).orElse(null);
+        if (customerId != null) {
+            var found = accounts.findByStripeCustomerId(customerId);
+            if (found.isPresent()) return accounts.lockById(found.get().getId()).orElse(null);
+        }
+        if (subscriptionId != null) return accounts.findByStripeSubscriptionId(subscriptionId)
+                .flatMap(a -> accounts.lockById(a.getId())).orElse(null);
         return null;
+    }
+
+    private boolean matchesSubscription(PlatformAccount account, String subscriptionId) {
+        if (account == null || subscriptionId == null) return false;
+        return subscriptionId.equals(account.getStripeSubscriptionId());
     }
 
     private String subscriptionId(JsonNode invoice) {

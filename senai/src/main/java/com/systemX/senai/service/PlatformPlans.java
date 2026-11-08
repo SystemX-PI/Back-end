@@ -16,7 +16,9 @@ public class PlatformPlans {
  public Map<String,Object> view(PlatformAccount a) {
   var view=new LinkedHashMap<String,Object>();
   view.put("tier",pro(a)?"PRO":"TRIAL"); view.put("whatsappLimit",whatsappLimit(a)); view.put("gmailLimit",gmailLimit(a)); view.put("upgradePriceCents",priceCents); view.put("currency","BRL");
-  view.put("billingProvider",a.getStripeSubscriptionId()!=null?"STRIPE":null); view.put("billingStatus",a.getStripeSubscriptionStatus());
+  boolean pix = pro(a) && a.getPaidUntil().equals(a.getStripePixPaidUntil());
+  view.put("billingProvider",pix?"STRIPE_PIX":a.getStripeSubscriptionId()!=null?"STRIPE":null);
+  view.put("billingStatus",pix?"pix_paid":a.getStripeSubscriptionStatus());
   return view;
  }
 }

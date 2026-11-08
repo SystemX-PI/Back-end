@@ -21,12 +21,14 @@ public class BaixaService {
     private final BaixaRepository baixaRepository;
     private final ProcessoContemplacaoRepository processoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final AuditoriaService auditoria;
 
     public BaixaService(BaixaRepository baixaRepository, ProcessoContemplacaoRepository processoRepository,
-            UsuarioRepository usuarioRepository) {
+            UsuarioRepository usuarioRepository, AuditoriaService auditoria) {
         this.baixaRepository = baixaRepository;
         this.processoRepository = processoRepository;
         this.usuarioRepository = usuarioRepository;
+        this.auditoria = auditoria;
     }
 
     @Transactional
@@ -49,6 +51,7 @@ public class BaixaService {
         processo.setResponsavel(usuario);
         processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
         processoRepository.save(processo);
+        auditoria.registrar("Baixa concluída", "Processo", processoId, "Processo finalizado");
         return toResponse(baixaRepository.save(baixa));
     }
 

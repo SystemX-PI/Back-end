@@ -1,5 +1,7 @@
 package com.systemX.senai.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,6 +16,7 @@ import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/configuracoes")
+@Tag(name = "Configuração de e-mail", description = "Remetente usado pelas comunicações da operação.")
 public class ConfiguracaoController {
     private final EmailService emailService;
 

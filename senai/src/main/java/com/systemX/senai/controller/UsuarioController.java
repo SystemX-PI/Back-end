@@ -1,5 +1,7 @@
 package com.systemX.senai.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import java.util.List;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,6 +22,7 @@ import com.systemX.senai.service.UsuarioService;
 import jakarta.validation.Valid;
 
 @RestController @RequestMapping("/api/usuarios")
+@Tag(name = "Usuários da operação", description = "Administração de usuários dos módulos de operação.")
 public class UsuarioController {
     private final UsuarioService service;
     public UsuarioController(UsuarioService service) { this.service = service; }

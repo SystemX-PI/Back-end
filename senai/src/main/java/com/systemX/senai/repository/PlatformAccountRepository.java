@@ -2,6 +2,7 @@ package com.systemX.senai.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.systemX.senai.entity.PlatformAccount;
 public interface PlatformAccountRepository extends JpaRepository<PlatformAccount, Long> {
+ java.util.Optional<PlatformAccount> findByInternalOperationsTrue();
  java.util.Optional<PlatformAccount> findByStripeCustomerId(String stripeCustomerId);
  java.util.Optional<PlatformAccount> findByStripeSubscriptionId(String stripeSubscriptionId);
  @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)

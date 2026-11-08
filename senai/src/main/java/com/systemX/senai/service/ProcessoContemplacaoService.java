@@ -21,11 +21,14 @@ public class ProcessoContemplacaoService {
     private final ProcessoContemplacaoRepository repository;
     private final HistoricoProcessoRepository historicoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final AuditoriaService auditoria;
     public ProcessoContemplacaoService(ProcessoContemplacaoRepository repository,
-            HistoricoProcessoRepository historicoRepository, UsuarioRepository usuarioRepository) {
+            HistoricoProcessoRepository historicoRepository, UsuarioRepository usuarioRepository,
+            AuditoriaService auditoria) {
         this.repository = repository;
         this.historicoRepository = historicoRepository;
         this.usuarioRepository = usuarioRepository;
+        this.auditoria = auditoria;
     }
     @Transactional
     public ProcessoResponse atualizarStatus(Long id, StatusProcessoRequest request) {
@@ -39,6 +42,7 @@ public class ProcessoContemplacaoService {
         historico.setData(LocalDateTime.now(ZoneOffset.UTC));
         historico.setObservacao(request.observacao());
         historicoRepository.save(historico);
+        auditoria.registrar("Alteração de status", "Processo", id, processo.getStatus() + " → " + request.status());
         processo.setStatus(request.status()); processo.setResponsavel(usuario); processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
         return toResponse(repository.save(processo));
     }

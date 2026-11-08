@@ -1,5 +1,7 @@
 package com.systemX.senai.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import java.util.List;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,6 +22,7 @@ import com.systemX.senai.service.ConsorcioService;
 import jakarta.validation.Valid;
 
 @RestController @RequestMapping("/api/consorcios")
+@Tag(name = "Consórcios", description = "Cadastro e consulta de consórcios.")
 public class ConsorcioController {
     private final ConsorcioService service;
     public ConsorcioController(ConsorcioService service) { this.service = service; }

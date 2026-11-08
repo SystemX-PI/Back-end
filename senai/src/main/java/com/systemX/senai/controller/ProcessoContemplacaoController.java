@@ -1,5 +1,7 @@
 package com.systemX.senai.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +16,7 @@ import com.systemX.senai.service.ProcessoContemplacaoService;
 import jakarta.validation.Valid;
 
 @RestController @RequestMapping("/api/processos-contemplacao")
+@Tag(name = "Processos de contemplação", description = "Consulta de processos e atualização de status.")
 public class ProcessoContemplacaoController {
     private final ProcessoContemplacaoService service;
     public ProcessoContemplacaoController(ProcessoContemplacaoService service) { this.service = service; }

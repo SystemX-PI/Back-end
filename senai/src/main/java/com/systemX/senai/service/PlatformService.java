@@ -41,7 +41,7 @@ public class PlatformService {
   @Value("${app.billing.stripe.monthly-price-id:}") String stripePriceId,
   @Value("${app.billing.stripe.monthly-price-cents:0}") int stripePriceCents) {
   this.accounts=accounts; this.instances=instances; this.mailboxes=mailboxes; this.users=users;
-  this.encoder=encoder; this.evolution=evolution; this.credentials=credentials; this.jdbc=jdbc; this.simulation=simulation; this.plans=plans;
+  this.encoder=encoder; this.evolution=evolution; this.credentials=credentials; this.jdbc=jdbc; this.simulation=simulation&&!stripeEnabled; this.plans=plans;
   this.stripeEnabled=stripeEnabled && !stripeSecretKey.isBlank() && !stripeWebhookSecret.isBlank() && !stripePriceId.isBlank() && stripePriceCents>0;
   this.stripePriceCents=stripePriceCents;
  }
@@ -56,18 +56,38 @@ public class PlatformService {
   Long id=user.getTipo()==TipoUsuario.ADMINISTRADOR ? requested : user.getContaId();
   if(id==null) throw error(400,"Selecione uma conta de cliente.");
    if(user.getTipo()!=TipoUsuario.ADMINISTRADOR && requested!=null && !requested.equals(id)) throw error(404,ACCOUNT_NOT_FOUND);
-   return accounts.findById(id).orElseThrow(()->error(404,ACCOUNT_NOT_FOUND));
+   return accounts.findById(id).filter(a->!Boolean.TRUE.equals(a.getInternalOperations()))
+       .orElseThrow(()->error(404,ACCOUNT_NOT_FOUND));
+ }
+ public PlatformAccount internalAccount() {
+   admin();
+   return accounts.findByInternalOperationsTrue().orElseThrow(()->error(503,"Canais internos indisponíveis."));
+ }
+ private PlatformAccount channelAccount(Long requested) {
+   return requested==null && currentUser().getTipo()==TipoUsuario.ADMINISTRADOR ? internalAccount() : account(requested);
+ }
+ private PlatformAccount lockChannelAccount(Long requested) {
+   return accounts.lockById(channelAccount(requested).getId()).orElseThrow(()->error(404,ACCOUNT_NOT_FOUND));
  }
   public PlatformAccount lockAccount(Long requested) { var a=account(requested); return accounts.lockById(a.getId()).orElseThrow(()->error(404,ACCOUNT_NOT_FOUND)); }
  private void manager() { if(currentUser().getTipo()==TipoUsuario.USUARIO || currentUser().getTipo()==TipoUsuario.FUNCIONARIO) throw error(403,"Somente o titular da conta pode alterar esta configuração."); }
- private boolean active(PlatformAccount a) { return !a.isSuspended() && (a.getTrialEndsAt().isAfter(Instant.now()) || plans.pro(a)); }
+ private boolean active(PlatformAccount a) { return !a.isSuspended() && (Boolean.TRUE.equals(a.getInternalOperations()) || a.getTrialEndsAt().isAfter(Instant.now()) || plans.pro(a)); }
  private void writable(PlatformAccount a) { manager(); if(!active(a)) throw error(402,a.isSuspended()?"Conta suspensa. Contate o administrador.":"Seu teste gratuito terminou. Ative a assinatura para continuar."); }
  @Transactional
  public UsuarioResponse signup(String name,String email,String password) {
    return createAccount(name, email, password);
   }
+  @Transactional
+  public UsuarioResponse signup(String name,String company,String email,String password) {
+   String companyName=company==null?name:company.trim();
+   if(company!=null && companyName.length()<2) throw error(400,"Informe o nome da empresa.");
+   return createAccount(name,companyName,email,password);
+  }
   private UsuarioResponse createAccount(String name,String email,String password) {
-  var a=new PlatformAccount(); a.setNome(name.trim()); a.setBrandName(name.trim()); a.setOwnerEmail(email.trim().toLowerCase(Locale.ROOT)); accounts.save(a);
+  return createAccount(name,name,email,password);
+ }
+ private UsuarioResponse createAccount(String name,String company,String email,String password) {
+  var a=new PlatformAccount(); a.setNome(company.trim()); a.setBrandName(company.trim()); a.setOwnerEmail(email.trim().toLowerCase(Locale.ROOT)); accounts.save(a);
   var u=new Usuario(); u.setNome(name.trim()); u.setEmail(a.getOwnerEmail()); u.setSenha(encoder.encode(password)); u.setTipo(TipoUsuario.CLIENTE); u.setContaId(a.getId()); users.save(u);
   return new UsuarioResponse(u.getId(),u.getNome(),u.getEmail(),u.getTipo(),u.isAtivo());
  }
@@ -94,7 +114,7 @@ public class PlatformService {
  }
  public List<Map<String,Object>> clients() {
   admin();
-  return jdbc.queryForList("SELECT a.id, a.nome, a.owner_email AS email, a.trial_ends_at AS trialEndsAt, a.paid_until AS paidUntil, a.suspended, a.professional, COALESCE(i.total,0) AS instances, COALESCE(m.total,0) AS gmails, COALESCE(u.total,0) AS users FROM platform_account a LEFT JOIN (SELECT conta_id, COUNT(*) total FROM platform_instance GROUP BY conta_id) i ON i.conta_id=a.id LEFT JOIN (SELECT conta_id, COUNT(*) total FROM platform_mailbox GROUP BY conta_id) m ON m.conta_id=a.id LEFT JOIN (SELECT conta_id, COUNT(*) total FROM usuario WHERE tipo <> 'CLIENTE' GROUP BY conta_id) u ON u.conta_id=a.id ORDER BY a.id DESC LIMIT 200");
+  return jdbc.queryForList("SELECT a.id, a.nome, a.owner_email AS email, a.trial_ends_at AS trialEndsAt, a.paid_until AS paidUntil, a.suspended, a.professional, COALESCE(i.total,0) AS instances, COALESCE(m.total,0) AS gmails, COALESCE(u.total,0) AS users FROM platform_account a LEFT JOIN (SELECT conta_id, COUNT(*) total FROM platform_instance GROUP BY conta_id) i ON i.conta_id=a.id LEFT JOIN (SELECT conta_id, COUNT(*) total FROM platform_mailbox GROUP BY conta_id) m ON m.conta_id=a.id LEFT JOIN (SELECT conta_id, COUNT(*) total FROM usuario WHERE tipo <> 'CLIENTE' GROUP BY conta_id) u ON u.conta_id=a.id WHERE a.internal_operations IS NULL ORDER BY a.id DESC LIMIT 200");
  }
   @Transactional public UsuarioResponse createClient(String name,String email,String password) { admin(); return createAccount(name,email,password); }
  public Map<String,Object> context(Long id) {
@@ -110,24 +130,47 @@ public class PlatformService {
   return map;
  }
  private Map<String,Object> instanceView(PlatformInstance i) { return Map.of("id",i.getId(),"name",i.getNome()); }
+ public Map<String,Object> internalChannels() {
+   var a=internalAccount();
+   var map=context(null);
+   map.put("operationChannels",true);
+   map.put("active",active(a));
+   map.put("instances",instances.findByContaIdOrderByIdAsc(a.getId()).stream().map(this::instanceView).toList());
+   map.put("mailboxes",mailboxes.findByContaIdOrderByIdAsc(a.getId()).stream().map(this::mailboxView).toList());
+   map.put("users",List.of());
+   return map;
+ }
  private Map<String,Object> mailboxView(PlatformMailbox m) { return Map.of("id",m.getId(),"name",m.getNome(),"email",m.getEmail(),"verified",m.isVerified()); }
   private Map<String,Object> userView(Usuario u) { return Map.of("id",u.getId(),"name",u.getNome(),FIELD_EMAIL,u.getEmail(),"active",u.isAtivo()); }
  @Transactional public Map<String,Object> addInstance(Long accountId,String name) {
-  var a=lockAccount(accountId); writable(a);
-  if(instances.countByContaId(a.getId())>=plans.whatsappLimit(a)) throw error(402,"Limite de WhatsApp do plano atingido. Faça um upgrade para adicionar mais números.");
+  var a=lockChannelAccount(accountId); writable(a);
+  if(!Boolean.TRUE.equals(a.getInternalOperations()) && instances.countByContaId(a.getId())>=plans.whatsappLimit(a)) throw error(402,"Limite de WhatsApp do plano atingido. Faça um upgrade para adicionar mais números.");
   var i=new PlatformInstance(); i.setContaId(a.getId()); i.setNome(name); i.setRemoteName("account-"+a.getId()+"-"+UUID.randomUUID());
   instances.saveAndFlush(i); return instanceView(i);
  }
- private PlatformInstance instance(Long accountId,Long id) { var a=account(accountId); return instances.findByIdAndContaId(id,a.getId()).orElseThrow(()->error(404,"Instância não encontrada.")); }
+ private PlatformInstance instance(Long accountId,Long id) { return ownedInstance(channelAccount(accountId),id); }
+ private PlatformInstance ownedInstance(PlatformAccount account,Long id) { return instances.findByIdAndContaId(id,account.getId()).orElseThrow(()->error(404,"Instância não encontrada.")); }
+ public PlatformInstance connectedInternalWhatsApp(Long id) {
+   var instance=ownedInstance(internalAccount(),id);
+   String state;
+   try {
+       state=evolution.getStatus(instance.getRemoteName()).state();
+   } catch(ResponseStatusException ex) {
+       throw error(503,"Não foi possível verificar a conexão do WhatsApp. Tente novamente em instantes.");
+   }
+   if(!"open".equalsIgnoreCase(state))
+       throw error(409,"O WhatsApp selecionado está desconectado. Reconecte em Canais internos.");
+   return instance;
+ }
  public EvolutionStatusResponse status(Long accountId,Long id) {
    manager();
    var i=instance(accountId,id);
    var s=evolution.getStatus(i.getRemoteName()); return new EvolutionStatusResponse(i.getNome(),s.state(),s.code(),s.qrCode(),s.pairingCode());
  }
  public EvolutionStatusResponse qr(Long accountId,Long id) {
-   var a=account(accountId); writable(a);
-   var i=instance(a.getId(),id);
-  if(instances.findByContaIdOrderByIdAsc(a.getId()).stream().limit(plans.whatsappLimit(a)).noneMatch(x->x.getId().equals(id))) throw error(402,"Esta instância exige um plano com mais conexões.");
+   var a=channelAccount(accountId); writable(a);
+   var i=ownedInstance(a,id);
+  if(!Boolean.TRUE.equals(a.getInternalOperations()) && instances.findByContaIdOrderByIdAsc(a.getId()).stream().limit(plans.whatsappLimit(a)).noneMatch(x->x.getId().equals(id))) throw error(402,"Esta instância exige um plano com mais conexões.");
   var s=evolution.generateQr(i.getRemoteName()); return new EvolutionStatusResponse(i.getNome(),s.state(),s.code(),s.qrCode(),s.pairingCode());
  }
  public void disconnect(Long accountId,Long id) { manager(); var i=instance(accountId,id); evolution.disconnect(i.getRemoteName()); }
@@ -145,13 +188,13 @@ public class PlatformService {
   u.setAtivo(active); u.invalidarSessoes(); users.save(u);
  }
  @Transactional public Map<String,Object> addMailbox(Long accountId,String name,String email,String password) {
-  var a=lockAccount(accountId); writable(a);
-  if(mailboxes.countByContaId(a.getId())>=plans.gmailLimit(a)) throw error(402,"Limite de Gmail do plano atingido. Faça um upgrade para adicionar mais contas.");
+  var a=lockChannelAccount(accountId); writable(a);
+  if(!Boolean.TRUE.equals(a.getInternalOperations()) && mailboxes.countByContaId(a.getId())>=plans.gmailLimit(a)) throw error(402,"Limite de Gmail do plano atingido. Faça um upgrade para adicionar mais contas.");
   String clean=password.replaceAll("\\s","");
   credentials.verifyGmail(email,clean);
   var m=new PlatformMailbox(); m.setContaId(a.getId()); m.setNome(name.trim()); m.setEmail(email.trim().toLowerCase(Locale.ROOT)); m.setEncryptedPassword(credentials.encrypt(clean)); m.setVerified(true); mailboxes.saveAndFlush(m); return mailboxView(m);
  }
- @Transactional public void removeMailbox(Long accountId,Long id) { manager(); var a=account(accountId); var m=mailboxes.findByIdAndContaId(id,a.getId()).orElseThrow(()->error(404,"E-mail não encontrado.")); mailboxes.delete(m); }
+ @Transactional public void removeMailbox(Long accountId,Long id) { manager(); var a=channelAccount(accountId); var m=mailboxes.findByIdAndContaId(id,a.getId()).orElseThrow(()->error(404,"E-mail não encontrado.")); mailboxes.delete(m); }
   @Transactional public void suspend(Long id,boolean value) { admin(); var a=accounts.findById(id).orElseThrow(()->error(404,ACCOUNT_NOT_FOUND)); a.setSuspended(value); accounts.save(a); }
  private ResponseStatusException error(int status,String message) { return new ResponseStatusException(HttpStatus.valueOf(status),message); }
 }
