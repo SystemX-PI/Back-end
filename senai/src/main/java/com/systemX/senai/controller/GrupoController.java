@@ -1,5 +1,7 @@
 package com.systemX.senai.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import java.util.List;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,6 +22,7 @@ import com.systemX.senai.service.GrupoService;
 import jakarta.validation.Valid;
 
 @RestController @RequestMapping("/api/grupos")
+@Tag(name = "Grupos", description = "Cadastro e consulta de grupos de consórcio.")
 public class GrupoController {
     private final GrupoService service;
     public GrupoController(GrupoService service) { this.service = service; }

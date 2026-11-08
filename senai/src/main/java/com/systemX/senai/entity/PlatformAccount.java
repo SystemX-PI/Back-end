@@ -6,6 +6,18 @@ import java.time.Instant;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 @Entity @Table(name="platform_account") @Getter @Setter
 public class PlatformAccount {
+ @JsonIgnore @Column(name = "internal_operations", unique = true)
+ private Boolean internalOperations;
+ @Column(name = "widget_origin", length = 255)
+ private String widgetOrigin;
+ @JsonIgnore @Column(name = "widget_key_digest", length = 64)
+ private String widgetKeyDigest;
+ @JsonIgnore @Column(name = "stripe_pix_session_id")
+ private String stripePixSessionId;
+ @JsonIgnore @Column(name = "stripe_pix_amount_cents")
+ private Integer stripePixAmountCents;
+ @JsonIgnore @Column(name = "stripe_pix_paid_until")
+ private Instant stripePixPaidUntil;
  @Id @GeneratedValue(strategy=GenerationType.IDENTITY) private Long id;
  @Column(nullable=false) private String nome;
  private String ownerEmail;

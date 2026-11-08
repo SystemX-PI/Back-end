@@ -39,7 +39,7 @@ public class UsuarioService {
     @Transactional(readOnly = true)
     public UsuarioResponse consultar(Long id) { return toResponse(buscar(id)); }
     public UsuarioResponse registrar(RegistroRequest request) {
-        return platform.signup(request.nome(), request.email(), request.senha());
+        return platform.signup(request.nome(), request.empresa(), request.email(), request.senha());
     }
     public UsuarioResponse atualizar(Long id, UsuarioAtualizacaoRequest request) {
         Usuario item = buscar(id);

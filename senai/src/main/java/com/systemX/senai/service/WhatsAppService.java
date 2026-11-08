@@ -4,9 +4,12 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class WhatsAppService {
@@ -31,27 +34,41 @@ public class WhatsAppService {
     }
 
     public void send(String recipient, String text) {
-        if (apiKey.isBlank() || instance.isBlank()) {
-            throw new IllegalStateException(
-                    "WhatsApp nao configurado. Informe EVOLUTION_API_KEY e EVOLUTION_INSTANCE.");
+        sendFrom(instance, recipient, text);
+    }
+
+    public void sendFrom(String remoteInstance, String recipient, String text) {
+        if (apiKey.isBlank() || remoteInstance.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "O serviço de WhatsApp ainda não está configurado.");
         }
 
         String phone = recipient.replaceAll("\\D", "");
-        if (phone.isBlank()) {
-            throw new IllegalArgumentException("Telefone do WhatsApp invalido: " + recipient);
+        if (!recipient.strip().startsWith("+") && (phone.length() == 10 || phone.length() == 11)) {
+            phone = "55" + phone;
+        }
+        if (!phone.matches("[1-9][0-9]{7,14}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe um WhatsApp válido com DDI e DDD.");
         }
 
         try {
             restClient.post()
-                    .uri("/message/sendText/{instance}", instance)
+                    .uri("/message/sendText/{instance}", remoteInstance)
                     .header("apikey", apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("number", phone, "text", text))
                     .retrieve()
                     .toBodilessEntity();
+        } catch (RestClientResponseException exception) {
+            String message = switch (exception.getStatusCode().value()) {
+                case 400, 422 -> "O WhatsApp recusou o envio. Confira se o destinatário está cadastrado no WhatsApp e inclua DDI e DDD.";
+                case 401, 403 -> "O serviço de WhatsApp recusou a autenticação do remetente.";
+                case 404 -> "O remetente não está disponível na Evolution. Confira sua conexão.";
+                case 429 -> "O serviço de WhatsApp limitou os envios. Aguarde e tente novamente.";
+                default -> "O serviço de WhatsApp não conseguiu processar o envio.";
+            };
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, message);
         } catch (RestClientException exception) {
-            throw new IllegalStateException("Falha ao enviar mensagem pela Evolution API: "
-                    + exception.getMessage(), exception);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível acessar o serviço de WhatsApp.");
         }
     }
     private static org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory() {

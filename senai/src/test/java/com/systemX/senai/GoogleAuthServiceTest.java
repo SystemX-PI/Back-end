@@ -104,13 +104,15 @@ class GoogleAuthServiceTest {
     }
 
     @Test
-    void registrationRejectsAnAlreadyRegisteredGoogleAccount() {
+    void registrationOpensTheExistingLinkedGoogleAccount() {
         when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.of(user(identity.email())));
 
-        ResponseStatusException error = assertThrows(ResponseStatusException.class,
-                () -> auth.registerWithGoogle("valid-google-token", "Empresa Aurora"));
+        var response = auth.registerWithGoogle("valid-google-token", "Empresa Aurora");
 
-        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals(identity.email(), response.email());
+        assertNotNull(response.token());
+        assertNotNull(response.refreshToken());
+        verify(refreshTokens).save(any());
         verify(platform, never()).signupWithGoogle(any(), any());
     }
 

@@ -26,11 +26,31 @@ public class PlatformCredentialService {
   } catch(Exception e) { throw new IllegalStateException("Falha ao proteger credenciais.", e); }
  }
  public void verifyGmail(String email, String password) {
+  try { gmailSender(email,password).testConnection(); } catch(Exception e) { throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Gmail recusou a conexão. Confira o e-mail e a senha de aplicativo."); }
+ }
+ public void sendGmail(String email, String encryptedPassword, String recipient, String subject, String text) {
+  var message = new org.springframework.mail.SimpleMailMessage();
+  message.setFrom(email);
+  message.setTo(recipient);
+  message.setSubject(subject);
+  message.setText(text);
+  gmailSender(email,decrypt(encryptedPassword)).send(message);
+ }
+ private String decrypt(String value) {
+  try {
+   String[] parts=value.split(":",2);
+   var base64=Base64.getDecoder();
+   Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
+   cipher.init(Cipher.DECRYPT_MODE,key,new GCMParameterSpec(128,base64.decode(parts[0])));
+   return new String(cipher.doFinal(base64.decode(parts[1])),StandardCharsets.UTF_8);
+  } catch(Exception e) { throw new IllegalStateException("Falha ao recuperar credenciais.",e); }
+ }
+ private JavaMailSenderImpl gmailSender(String email, String password) {
   JavaMailSenderImpl sender = new JavaMailSenderImpl();
   sender.setHost("smtp.gmail.com"); sender.setPort(587); sender.setUsername(email); sender.setPassword(password);
   var props = sender.getJavaMailProperties();
   props.put("mail.smtp.auth", "true"); props.put("mail.smtp.starttls.enable", "true"); props.put("mail.smtp.starttls.required", "true");
   props.put("mail.smtp.connectiontimeout", "5000"); props.put("mail.smtp.timeout", "5000"); props.put("mail.smtp.writetimeout", "5000");
-  try { sender.testConnection(); } catch(Exception e) { throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Gmail recusou a conexão. Confira o e-mail e a senha de aplicativo."); }
+  return sender;
  }
 }

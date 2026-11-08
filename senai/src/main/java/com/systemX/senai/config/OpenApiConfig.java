@@ -11,12 +11,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class OpenApiConfig {
     @Bean
-    OpenAPI senaiOpenAPI() {
+    OpenAPI documentacaoSystemX() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("API Senai")
+                        .title("API SystemX")
                         .version("v1")
-                        .description("API protegida por JWT. Use o token gerado em /api/auth/login. Em ambiente local, um token de desenvolvimento pode ser habilitado por configuração."))
+                        .description("Use Autenticação para obter uma sessão e informe o token de acesso em Authorize nas operações protegidas. Plataforma reúne conta e canais; Assinaturas reúne a gestão do plano. Eventos do Stripe são chamados pelo provedor com assinatura própria."))
                 .components(new Components()
                         .addSecuritySchemes("bearerAuth", new SecurityScheme()
                                 .name("Authorization")

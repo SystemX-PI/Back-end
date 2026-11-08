@@ -1,10 +1,13 @@
 package com.systemX.senai.controller;
+
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.security.Principal;
 import com.systemX.senai.dto.*;
 import com.systemX.senai.service.PortalService;
 import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/portal/processos")
+@Tag(name = "Portal do cliente", description = "Consulta dos processos do cliente autenticado.")
 public class PortalController {
     private final PortalService service;
     public PortalController(PortalService service) { this.service = service; }

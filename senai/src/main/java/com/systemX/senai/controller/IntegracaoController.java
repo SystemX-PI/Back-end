@@ -1,5 +1,9 @@
 package com.systemX.senai.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +30,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/integracoes")
+@Tag(name = "Integrações da operação", description = "Recepção de contemplações, fila de comunicações e baixa de processos.")
 public class IntegracaoController {
     private final IntegracaoContempladoService integracaoService;
     private final BaixaService baixaService;
@@ -41,6 +46,9 @@ public class IntegracaoController {
         this.notifications = notifications;
     }
 
+    @Operation(summary = "Receber uma contemplação do sistema parceiro",
+            description = "Autentica a integração pelo cabeçalho X-Integration-Key.")
+    @SecurityRequirements
     @PostMapping("/contemplacoes")
     public ResponseEntity<IntegracaoResponse> receber(@RequestHeader("X-Integration-Key") String key,
             @Valid @RequestBody ContempladoRequest request) {

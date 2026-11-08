@@ -1,5 +1,7 @@
 package com.systemX.senai.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import java.util.List;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,6 +22,7 @@ import com.systemX.senai.service.CotaService;
 import jakarta.validation.Valid;
 
 @RestController @RequestMapping("/api/cotas")
+@Tag(name = "Cotas", description = "Cadastro e consulta de cotas.")
 public class CotaController {
     private final CotaService service;
     public CotaController(CotaService service) { this.service = service; }

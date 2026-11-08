@@ -81,9 +81,10 @@ public class AuthService {
     @Transactional
     public AuthResponse registerWithGoogle(String credential, String companyName) {
         GoogleIdentityService.Identity identity = googleIdentityService.verify(credential);
-        if (usuarioRepository.findByGoogleSubject(identity.subject()).isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Esta conta Google já possui cadastro. Entre pela tela de login.");
+        Usuario existing = usuarioRepository.findByGoogleSubject(identity.subject()).orElse(null);
+        if (existing != null) {
+            if (!existing.isAtivo()) throw new InvalidCredentialsException();
+            return issueTokens(existing);
         }
         if (usuarioRepository.lockByEmail(identity.email()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,

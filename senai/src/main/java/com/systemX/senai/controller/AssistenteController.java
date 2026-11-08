@@ -1,5 +1,7 @@
 package com.systemX.senai.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +17,7 @@ import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/assistente")
+@Tag(name = "Assistente", description = "Consulta de processos e confirmação de ações sugeridas.")
 public class AssistenteController {
     private final AssistenteService service;
 

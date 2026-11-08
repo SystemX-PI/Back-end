@@ -47,6 +47,8 @@ public class IntegracaoContempladoService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final WhatsAppService whatsAppService;
+    private final AuditoriaService auditoria;
+    private final PlatformService platform;
 
     public IntegracaoContempladoService(
             UsuarioRepository usuarioRepository,
@@ -58,7 +60,7 @@ public class IntegracaoContempladoService {
             ComunicacaoRepository comunicacaoRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
-            WhatsAppService whatsAppService) {
+            WhatsAppService whatsAppService, AuditoriaService auditoria, PlatformService platform) {
         this.usuarioRepository = usuarioRepository;
         this.cotaRepository = cotaRepository;
         this.assembleiaRepository = assembleiaRepository;
@@ -69,6 +71,8 @@ public class IntegracaoContempladoService {
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.whatsAppService = whatsAppService;
+        this.auditoria = auditoria;
+        this.platform = platform;
     }
 
     @Transactional
@@ -203,10 +207,14 @@ public class IntegracaoContempladoService {
         public ComunicacaoResponse enviarWhatsApp(Long processoId, WhatsAppRequest request) {
         ProcessoContemplacao processo = processoRepository.findById(processoId)
             .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
-        Usuario responsavel = usuarioRepository.findFirstByAtivoTrue()
+        String remoteName = request.remetenteId() == null ? null
+            : platform.connectedInternalWhatsApp(request.remetenteId()).getRemoteName();
+        Usuario responsavel = auditoria.responsavel();
+        if (responsavel == null) responsavel = usuarioRepository.findFirstByAtivoTrue()
             .orElseThrow(() -> new ResourceNotFoundException("Nenhum usuário ativo para registrar a comunicação"));
         Comunicacao comunicacao = criarWhatsApp(processo, responsavel, request.telefone(), request.mensagem());
-        enviar(comunicacao);
+        enviar(comunicacao, remoteName);
+        auditoria.registrar("Disparo manual de WhatsApp", "Processo", processoId, comunicacao.getStatus().name());
         return toResponse(comunicacao);
         }
 
@@ -234,8 +242,12 @@ public class IntegracaoContempladoService {
     }
 
     private void enviar(Comunicacao comunicacao) {
+        enviar(comunicacao, null);
+    }
+
+    private void enviar(Comunicacao comunicacao, String remoteName) {
         boolean whatsApp = comunicacao.getCanal() == CanalComunicacao.WHATSAPP;
-        if (whatsApp && !whatsAppService.isEnabled()) {
+        if (whatsApp && remoteName == null && !whatsAppService.isEnabled()) {
             comunicacao.setErro("WhatsApp desabilitado. Configure app.whatsapp.enabled=true.");
             comunicacao.setStatus(StatusComunicacao.PENDENTE);
             comunicacaoRepository.save(comunicacao);
@@ -248,7 +260,9 @@ public class IntegracaoContempladoService {
             return;
         }
         try {
-            if (whatsApp) {
+            if (remoteName != null) {
+                whatsAppService.sendFrom(remoteName, comunicacao.getDestinatario(), comunicacao.getMensagem());
+            } else if (whatsApp) {
                 whatsAppService.send(comunicacao.getDestinatario(), comunicacao.getMensagem());
             } else {
                 emailService.send(comunicacao.getDestinatario(), comunicacao.getAssunto(), comunicacao.getMensagem());
@@ -258,7 +272,10 @@ public class IntegracaoContempladoService {
             comunicacao.setErro(null);
         } catch (RuntimeException exception) {
             comunicacao.setStatus(StatusComunicacao.FALHA);
-            comunicacao.setErro(exception.getMessage());
+            if (remoteName == null) comunicacao.setErro(exception.getMessage());
+            else if (exception instanceof org.springframework.web.server.ResponseStatusException providerError)
+                comunicacao.setErro(providerError.getReason());
+            else comunicacao.setErro("Não foi possível enviar pelo WhatsApp selecionado.");
         }
         comunicacaoRepository.save(comunicacao);
     }
