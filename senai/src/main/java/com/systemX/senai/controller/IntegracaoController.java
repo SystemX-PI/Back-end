@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.systemX.senai.dto.BaixaRequest;
@@ -22,8 +23,10 @@ import com.systemX.senai.dto.ContempladoRequest;
 import com.systemX.senai.dto.IntegracaoResponse;
 import com.systemX.senai.dto.FilaComunicacaoResponse;
 import com.systemX.senai.dto.WhatsAppRequest;
+import com.systemX.senai.dto.PaginaResponse;
 import com.systemX.senai.service.BaixaService;
 import com.systemX.senai.service.IntegracaoContempladoService;
+import com.systemX.senai.service.NotificationHistoryService;
 
 import jakarta.validation.Valid;
 import java.util.List;
@@ -35,11 +38,11 @@ public class IntegracaoController {
     private final IntegracaoContempladoService integracaoService;
     private final BaixaService baixaService;
     private final String integrationKey;
-    private final com.systemX.senai.service.NotificationHistoryService notifications;
+    private final NotificationHistoryService notifications;
 
     public IntegracaoController(IntegracaoContempladoService integracaoService, BaixaService baixaService,
             @Value("${app.integration.api-key:}") String integrationKey,
-            com.systemX.senai.service.NotificationHistoryService notifications) {
+            NotificationHistoryService notifications) {
         this.integracaoService = integracaoService;
         this.baixaService = baixaService;
         this.integrationKey = integrationKey;
@@ -59,6 +62,12 @@ public class IntegracaoController {
     @GetMapping("/processos/{processoId}/comunicacao")
     public ComunicacaoResponse comunicacao(@PathVariable Long processoId) {
         return integracaoService.consultar(processoId);
+    }
+
+    @GetMapping("/processos/{processoId}/comunicacoes/historico")
+    public PaginaResponse<NotificationHistoryService.ProcessItem> historicoProcesso(@PathVariable Long processoId,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return notifications.processHistory(processoId, page, size);
     }
 
     @GetMapping("/comunicacoes/fila")

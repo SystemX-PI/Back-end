@@ -163,30 +163,47 @@ public class IntegracaoContempladoService {
     public ComunicacaoResponse reenviar(Long processoId) {
         ProcessoContemplacao processo = processoRepository.findById(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
-        Comunicacao email = comunicacaoRepository
+        Comunicacao originalEmail = comunicacaoRepository
                 .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.EMAIL)
+                .orElseThrow(() -> new ResourceNotFoundException("Comunicado padrão não encontrado para o processo: " + processoId));
+        Comunicacao originalWhatsApp = comunicacaoRepository
+                .findFirstByProcessoIdAndCanalAndMensagemOrderByIdAsc(
+                        processoId, CanalComunicacao.WHATSAPP, originalEmail.getMensagem())
                 .orElse(null);
-        Comunicacao whatsapp = comunicacaoRepository
-                .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.WHATSAPP)
-                .orElse(null);
-        if (email == null && whatsapp == null) {
-            throw new ResourceNotFoundException("Comunicação não encontrada para o processo: " + processoId);
-        }
-        if (email != null) {
-            processo.setStatus(StatusProcesso.EM_COMUNICACAO);
-            processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
-            processoRepository.save(processo);
-            enviar(email);
-        }
-        if (whatsapp != null) {
-            enviar(whatsapp);
-        }
-        boolean comunicado = (email != null && email.getStatus() == StatusComunicacao.SUCESSO)
-                || (whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO);
-        processo.setStatus(comunicado ? StatusProcesso.CLIENTE_CONTATADO : StatusProcesso.AGUARDANDO_COMUNICACAO);
-        processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
-        processoRepository.save(processo);
+        Usuario responsavel = auditoria.responsavel();
+        if (responsavel == null) responsavel = processo.getResponsavel();
+
+        Comunicacao email = reenviarCanal(originalEmail, responsavel);
+        Comunicacao whatsapp = originalWhatsApp == null ? null : reenviarCanal(originalWhatsApp, responsavel);
+        atualizarAposComunicacao(processo, email, whatsapp);
         return toResponse(processoId, email, whatsapp);
+    }
+
+    private Comunicacao reenviarCanal(Comunicacao original, Usuario responsavel) {
+        Comunicacao tentativa = new Comunicacao();
+        tentativa.setProcesso(original.getProcesso());
+        tentativa.setCanal(original.getCanal());
+        tentativa.setStatus(StatusComunicacao.PENDENTE);
+        tentativa.setResponsavel(responsavel);
+        tentativa.setDestinatario(original.getDestinatario());
+        tentativa.setAssunto(original.getAssunto());
+        tentativa.setMensagem(original.getMensagem());
+        tentativa.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
+        enviar(tentativa);
+        return tentativa;
+    }
+
+    private void atualizarAposComunicacao(ProcessoContemplacao processo, Comunicacao email, Comunicacao whatsapp) {
+        switch (processo.getStatus()) {
+            case CONTEMPLADO, AGUARDANDO_COMUNICACAO, EM_COMUNICACAO -> {
+                boolean comunicado = (email != null && email.getStatus() == StatusComunicacao.SUCESSO)
+                        || (whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO);
+                processo.setStatus(comunicado ? StatusProcesso.CLIENTE_CONTATADO : StatusProcesso.AGUARDANDO_COMUNICACAO);
+                processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
+                processoRepository.save(processo);
+            }
+            default -> { /* Preserva o andamento após o primeiro contato. */ }
+        }
     }
 
     @Transactional(readOnly = true)
@@ -214,6 +231,7 @@ public class IntegracaoContempladoService {
             .orElseThrow(() -> new ResourceNotFoundException("Nenhum usuário ativo para registrar a comunicação"));
         Comunicacao comunicacao = criarWhatsApp(processo, responsavel, request.telefone(), request.mensagem());
         enviar(comunicacao, remoteName);
+        if (comunicacao.getStatus() == StatusComunicacao.SUCESSO) atualizarAposComunicacao(processo, null, comunicacao);
         auditoria.registrar("Disparo manual de WhatsApp", "Processo", processoId, comunicacao.getStatus().name());
         return toResponse(comunicacao);
         }

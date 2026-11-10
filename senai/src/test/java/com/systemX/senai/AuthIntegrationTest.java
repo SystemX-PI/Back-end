@@ -239,11 +239,21 @@ class AuthIntegrationTest {
                 .andExpect(jsonPath("$[0].idExterno").value("CONT-FILA-001"))
                 .andExpect(jsonPath("$[0].comunicacao.statusGeral").value("PENDENTE"));
 
+        String history = "/api/integracoes/processos/" + processoId + "/comunicacoes/historico";
+        mockMvc.perform(get(history).header("Authorization", portalToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get(history).param("size", "1").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.items.length()").value(1));
+
         mockMvc.perform(post("/api/integracoes/processos/{processoId}/comunicacao/reenvio", processoId)
                 .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.processoId").value(processoId))
                 .andExpect(jsonPath("$.statusGeral").value("PENDENTE"));
+        mockMvc.perform(get(history).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(4));
+
     }
 
     private Usuario criarUsuario(String email, TipoUsuario tipo) {
