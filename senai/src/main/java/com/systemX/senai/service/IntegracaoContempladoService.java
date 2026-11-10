@@ -151,6 +151,13 @@ public class IntegracaoContempladoService {
         return platform.operationalWhatsAppSenders();
     }
 
+    public record StatusRemetente(boolean connected) {}
+
+    public StatusRemetente statusRemetente(Long senderId) {
+        String defaultInstance = whatsAppService.isEnabled() ? whatsAppService.defaultInstance() : null;
+        return new StatusRemetente(platform.operationalWhatsAppConnected(senderId, defaultInstance));
+    }
+
     public record ResumoFila(long total, long pendentes, long comunicados, long comFalha) {}
 
     @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)

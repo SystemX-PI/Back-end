@@ -164,6 +164,13 @@ public class PlatformService {
      throw error(403, "Acesso exclusivo da operação.");
    }
  }
+ public boolean operationalWhatsAppConnected(Long senderId, String defaultInstance) {
+   requireOperator();
+   String remoteName = senderId == null ? defaultInstance
+       : ownedInstance(internalAccountForOperation(), senderId).getRemoteName();
+   if (remoteName == null) return false;
+   return "open".equalsIgnoreCase(evolution.getStatus(remoteName).state());
+ }
  public PlatformInstance connectedInternalWhatsApp(Long id) {
    requireOperator();
    var instance=ownedInstance(internalAccountForOperation(),id);

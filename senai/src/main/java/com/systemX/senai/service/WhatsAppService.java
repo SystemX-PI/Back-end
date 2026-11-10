@@ -29,6 +29,8 @@ public class WhatsAppService {
         this.instance = instance;
     }
 
+    public String defaultInstance() { return instance; }
+
     public boolean isEnabled() {
         return enabled;
     }
