@@ -125,6 +125,7 @@ public class IntegracaoContempladoService {
         comunicacao.setStatus(StatusComunicacao.PENDENTE);
         comunicacao.setResponsavel(responsavel);
         comunicacao.setDestinatario(cliente.getEmail());
+        comunicacao.setComunicadoOficial(true);
         comunicacao.setAssunto(assunto);
         comunicacao.setMensagem(mensagem);
         comunicacao.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
@@ -133,6 +134,7 @@ public class IntegracaoContempladoService {
         Comunicacao comunicacaoWhatsApp = null;
         if (request.telefone() != null && !request.telefone().isBlank()) {
             comunicacaoWhatsApp = criarWhatsApp(processo, responsavel, request.telefone(), mensagem);
+            comunicacaoWhatsApp.setComunicadoOficial(true);
         }
         return response(processo, comunicacao, comunicacaoWhatsApp, false);
     }
@@ -143,6 +145,20 @@ public class IntegracaoContempladoService {
     @Transactional(readOnly = true)
     public com.systemX.senai.dto.PaginaResponse<FilaComunicacaoResponse> listarFilaPagina(int page, int size, String q, String status) {
         return listarFilaInterna(page, size, q, status);
+    }
+
+    public List<java.util.Map<String, Object>> remetentesWhatsApp() {
+        return platform.operationalWhatsAppSenders();
+    }
+
+    public record ResumoFila(long total, long pendentes, long comunicados, long comFalha) {}
+
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public ResumoFila resumoFila() {
+        long total = processoRepository.count(FilaFiltro.criar("", ""));
+        long pendentes = processoRepository.count(FilaFiltro.criar("", "PENDENTE"));
+        long comFalha = processoRepository.count(FilaFiltro.criar("", "FALHA"));
+        return new ResumoFila(total, pendentes, total - pendentes, comFalha);
     }
 
     private com.systemX.senai.dto.PaginaResponse<FilaComunicacaoResponse> listarFilaInterna(int page, int size, String q, String status) {
@@ -164,12 +180,16 @@ public class IntegracaoContempladoService {
         ProcessoContemplacao processo = processoRepository.findById(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
         Comunicacao originalEmail = comunicacaoRepository
-                .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.EMAIL)
+                .findFirstByProcessoIdAndCanalOrderByIdAsc(processoId, CanalComunicacao.EMAIL)
                 .orElseThrow(() -> new ResourceNotFoundException("Comunicado padrão não encontrado para o processo: " + processoId));
         Comunicacao originalWhatsApp = comunicacaoRepository
-                .findFirstByProcessoIdAndCanalAndMensagemOrderByIdAsc(
-                        processoId, CanalComunicacao.WHATSAPP, originalEmail.getMensagem())
-                .orElse(null);
+                .findFirstByProcessoIdAndCanalAndComunicadoOficialTrueOrderByIdAsc(processoId, CanalComunicacao.WHATSAPP)
+                .orElseGet(() -> originalEmail.isComunicadoOficial() ? null : comunicacaoRepository
+                        .findFirstByProcessoIdAndCanalAndMensagemOrderByIdAsc(
+                                processoId, CanalComunicacao.WHATSAPP, originalEmail.getMensagem())
+                        .orElse(null));
+        if (originalWhatsApp != null) originalWhatsApp.setComunicadoOficial(true);
+        if (originalWhatsApp != null) originalEmail.setComunicadoOficial(true);
         Usuario responsavel = auditoria.responsavel();
         if (responsavel == null) responsavel = processo.getResponsavel();
 
@@ -181,6 +201,7 @@ public class IntegracaoContempladoService {
 
     private Comunicacao reenviarCanal(Comunicacao original, Usuario responsavel) {
         Comunicacao tentativa = new Comunicacao();
+        tentativa.setComunicadoOriginal(original);
         tentativa.setProcesso(original.getProcesso());
         tentativa.setCanal(original.getCanal());
         tentativa.setStatus(StatusComunicacao.PENDENTE);

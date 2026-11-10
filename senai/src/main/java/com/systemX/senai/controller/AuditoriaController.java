@@ -20,7 +20,9 @@ public class AuditoriaController {
 
     @GetMapping("/pagina")
     public PaginaResponse<AuditoriaService.Evento> pagina(@RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String q) {
-        return auditoria.pagina(page, size, q);
+            @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String q,
+            @RequestParam(required = false) String acao,
+            @RequestParam(required = false) java.time.LocalDate data) {
+        return auditoria.pagina(page, size, q, acao, data);
     }
 }

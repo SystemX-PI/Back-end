@@ -12,6 +12,10 @@ public class Comunicacao {
     @Enumerated(EnumType.STRING) @Column(nullable = false) private CanalComunicacao canal;
     @Enumerated(EnumType.STRING) @Column(nullable = false) private StatusComunicacao status;
     @ManyToOne(fetch = FetchType.LAZY, optional = false) private Usuario responsavel;
+    @Column(nullable = false) private boolean comunicadoOficial;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "comunicado_original_id")
+    private Comunicacao comunicadoOriginal;
     private String destinatario;
     private String assunto;
     @Column(length = 2000) private String mensagem;

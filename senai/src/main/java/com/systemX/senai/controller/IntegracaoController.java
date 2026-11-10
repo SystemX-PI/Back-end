@@ -70,6 +70,16 @@ public class IntegracaoController {
         return notifications.processHistory(processoId, page, size);
     }
 
+    @GetMapping("/comunicacoes/remetentes-whatsapp")
+    public List<java.util.Map<String, Object>> remetentesWhatsApp() {
+        return integracaoService.remetentesWhatsApp();
+    }
+
+    @GetMapping("/comunicacoes/fila/resumo")
+    public IntegracaoContempladoService.ResumoFila resumoFila() {
+        return integracaoService.resumoFila();
+    }
+
     @GetMapping("/comunicacoes/fila")
     public List<FilaComunicacaoResponse> fila() {
         return integracaoService.listarFila();

@@ -24,6 +24,7 @@ final class FilaFiltro {
                 String like = "%" + q.trim().toLowerCase(java.util.Locale.ROOT).replace("%", "\\%").replace("_", "\\_") + "%";
                 termo = cb.or(cb.like(cb.lower(root.get("origem")), like, '\\'),
                     cb.like(cb.lower(root.get("idExterno")), like, '\\'),
+                    cb.like(cb.lower(root.join("cliente", JoinType.LEFT).get("nome")), like, '\\'),
                     canal(root, query, cb, null, null, like));
                 try { termo = cb.or(termo, cb.equal(root.get("id"), Long.valueOf(q.trim()))); }
                 catch (NumberFormatException ignored) {

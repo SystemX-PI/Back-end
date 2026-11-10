@@ -8,6 +8,9 @@ import java.util.Optional;
 public interface ComunicacaoRepository extends JpaRepository<Comunicacao, Long> {
 	Optional<Comunicacao> findFirstByProcessoIdOrderByIdDesc(Long processoId);
 	Optional<Comunicacao> findFirstByProcessoIdAndCanalOrderByIdDesc(Long processoId, CanalComunicacao canal);
+    Optional<Comunicacao> findFirstByProcessoIdAndCanalAndComunicadoOficialTrueOrderByIdAsc(
+            Long processoId, CanalComunicacao canal);
+    Optional<Comunicacao> findFirstByProcessoIdAndCanalOrderByIdAsc(Long processoId, CanalComunicacao canal);
     Page<Comunicacao> findByProcessoId(Long processoId, Pageable pagina);
     Optional<Comunicacao> findFirstByProcessoIdAndCanalAndMensagemOrderByIdAsc(
             Long processoId, CanalComunicacao canal, String mensagem);

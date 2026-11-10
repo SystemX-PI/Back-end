@@ -32,6 +32,8 @@ public class JwtService {
         return Jwts.builder()
                 .subject(usuario.getEmail())
                 .claim("tipo", usuario.getTipo().name())
+                .claim("beneficiario", usuario.getTipo() == com.systemX.senai.enums.TipoUsuario.CLIENTE
+                        && usuario.getContaId() == null)
                 .claim("uid", usuario.getId())
                 .claim("av", usuario.getVersaoAutenticacao())
                 .issuedAt(Date.from(now))

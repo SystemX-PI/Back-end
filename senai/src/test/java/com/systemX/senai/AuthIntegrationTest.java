@@ -67,6 +67,12 @@ class AuthIntegrationTest {
     @Autowired
     private AssembleiaRepository assembleiaRepository;
 
+    @Autowired
+    private com.systemX.senai.repository.ComunicacaoRepository comunicacoes;
+
+    @Autowired
+    private com.systemX.senai.repository.ProcessoContemplacaoRepository processos;
+
     @org.junit.jupiter.api.AfterEach
     void limparConfiguracaoEmail() { emailService.configure("", ""); }
 
@@ -239,6 +245,14 @@ class AuthIntegrationTest {
                 .andExpect(jsonPath("$[0].idExterno").value("CONT-FILA-001"))
                 .andExpect(jsonPath("$[0].comunicacao.statusGeral").value("PENDENTE"));
 
+        mockMvc.perform(get("/api/integracoes/comunicacoes/fila/resumo")
+                .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.pendentes").value(1));
+        mockMvc.perform(get("/api/integracoes/comunicacoes/fila/pagina").param("q", "Maria")
+                .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+
         String history = "/api/integracoes/processos/" + processoId + "/comunicacoes/historico";
         mockMvc.perform(get(history).header("Authorization", portalToken))
                 .andExpect(status().isForbidden());
@@ -246,13 +260,36 @@ class AuthIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.items.length()").value(1));
 
+        var originalWhatsApp = comunicacoes.findFirstByProcessoIdAndCanalOrderByIdAsc(
+                processoId, com.systemX.senai.enums.CanalComunicacao.WHATSAPP).orElseThrow();
+        originalWhatsApp.setComunicadoOficial(false);
+        var originalEmail = comunicacoes.findFirstByProcessoIdAndCanalOrderByIdAsc(
+                processoId, com.systemX.senai.enums.CanalComunicacao.EMAIL).orElseThrow();
+        originalEmail.setComunicadoOficial(false);
+        mockMvc.perform(post("/api/integracoes/processos/{processoId}/comunicacao/reenvio", processoId)
+                .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.whatsapp.id").isNumber());
+        assertTrue(originalWhatsApp.isComunicadoOficial());
+
+        originalWhatsApp.setMensagem("Comunicado oficial editado");
+        var processo = processos.findById(processoId).orElseThrow();
+        processo.setStatus(com.systemX.senai.enums.StatusProcesso.EM_ANALISE);
+
         mockMvc.perform(post("/api/integracoes/processos/{processoId}/comunicacao/reenvio", processoId)
                 .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.processoId").value(processoId))
                 .andExpect(jsonPath("$.statusGeral").value("PENDENTE"));
         mockMvc.perform(get(history).header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(4));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(6))
+                .andExpect(jsonPath("$.items[0].comunicadoOriginalId").isNumber())
+                .andExpect(jsonPath("$.items[1].comunicadoOriginalId").isNumber());
+        org.junit.jupiter.api.Assertions.assertEquals(com.systemX.senai.enums.StatusProcesso.EM_ANALISE,
+                processos.findById(processoId).orElseThrow().getStatus());
+        var tentativa = comunicacoes.findFirstByProcessoIdAndCanalOrderByIdDesc(
+                processoId, com.systemX.senai.enums.CanalComunicacao.WHATSAPP).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals("Comunicado oficial editado", tentativa.getMensagem());
+
 
     }
 

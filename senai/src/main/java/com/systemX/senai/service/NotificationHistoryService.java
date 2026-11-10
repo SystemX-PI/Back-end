@@ -32,7 +32,8 @@ public class NotificationHistoryService {
     }
 
     public record ProcessItem(Long id, CanalComunicacao canal, StatusComunicacao status,
-            String destinatario, LocalDateTime criadaEm, LocalDateTime enviadaEm, String erro) {}
+            String destinatario, LocalDateTime criadaEm, LocalDateTime enviadaEm, String erro,
+            Long comunicadoOriginalId) {}
 
     @Transactional(readOnly = true)
     public PaginaResponse<ProcessItem> processHistory(Long processId, int page, int size) {
@@ -42,7 +43,8 @@ public class NotificationHistoryService {
         }
         return PaginaResponse.from(communications.findByProcessoId(processId, pagination).map(c ->
                 new ProcessItem(c.getId(), c.getCanal(), c.getStatus(), c.getDestinatario(),
-                        c.getCriadaEm(), c.getEnviadaEm(), publicError(c))));
+                        c.getCriadaEm(), c.getEnviadaEm(), publicError(c),
+                        c.getComunicadoOriginal() == null ? null : c.getComunicadoOriginal().getId())));
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
