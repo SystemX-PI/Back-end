@@ -49,7 +49,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                    .requestMatchers(HttpMethod.POST, "/api/auth/google/link").authenticated()
+                    .requestMatchers(HttpMethod.POST, "/api/auth/google/link", "/api/auth/google/photo").authenticated()
                     .requestMatchers("/api/auth/**").permitAll()
                     .requestMatchers("/api/assistente/**").hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO)
                     .requestMatchers(HttpMethod.POST, "/api/platform/webhooks/stripe").permitAll()
