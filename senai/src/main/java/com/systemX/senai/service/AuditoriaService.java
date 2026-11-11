@@ -36,11 +36,26 @@ public class AuditoriaService {
     }
 
     @Transactional(readOnly = true)
-    public PaginaResponse<Evento> pagina(int page, int size, String q) {
+    public PaginaResponse<Evento> pagina(int page, int size, String q, String acao, java.time.LocalDate data) {
         var filtro = Paginacao.<Auditoria>busca(q, "acao", "entidade", "detalhes");
         var result = auditorias.findAll((root, query, cb) -> {
             if (query != null && query.getResultType() == Auditoria.class) root.fetch("usuario", JoinType.LEFT);
-            return filtro.toPredicate(root, query, cb);
+            var predicate = filtro.toPredicate(root, query, cb);
+            if (q != null && !q.isBlank()) {
+                var usuario = root.join("usuario", JoinType.LEFT);
+                var email = cb.equal(cb.lower(usuario.get("email")), q.trim().toLowerCase(java.util.Locale.ROOT));
+                predicate = cb.or(predicate, email);
+                try {
+                    predicate = cb.or(predicate, cb.equal(root.get("registroId"), Long.parseLong(q.trim())));
+                } catch (NumberFormatException ignored) {
+                    // Text searches still match action, entity, details and operator email.
+                }
+            }
+            if (acao != null && !acao.isBlank()) predicate = cb.and(predicate, cb.equal(root.get("acao"), acao));
+            if (data != null) predicate = cb.and(predicate,
+                    cb.greaterThanOrEqualTo(root.get("data"), data.atStartOfDay()),
+                    cb.lessThan(root.get("data"), data.plusDays(1).atStartOfDay()));
+            return predicate;
         }, Paginacao.pagina(page, size));
         return PaginaResponse.from(result.map(item -> new Evento(item.getId(), item.getData(), item.getAcao(),
                 item.getUsuario() == null ? null : item.getUsuario().getNome(), item.getEntidade(),

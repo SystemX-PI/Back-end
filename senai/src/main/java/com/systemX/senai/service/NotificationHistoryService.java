@@ -1,6 +1,10 @@
 package com.systemX.senai.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import com.systemX.senai.dto.PaginaResponse;
+import com.systemX.senai.repository.ProcessoContemplacaoRepository;
+import com.systemX.senai.exception.ResourceNotFoundException;
 import java.time.temporal.ChronoUnit;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -19,8 +23,28 @@ public class NotificationHistoryService {
     private static final int RECENT_LIMIT = 20;
     private final ComunicacaoRepository communications;
 
-    public NotificationHistoryService(ComunicacaoRepository communications) {
+    private final ProcessoContemplacaoRepository processes;
+
+    public NotificationHistoryService(ComunicacaoRepository communications,
+            ProcessoContemplacaoRepository processes) {
         this.communications = communications;
+        this.processes = processes;
+    }
+
+    public record ProcessItem(Long id, CanalComunicacao canal, StatusComunicacao status,
+            String destinatario, LocalDateTime criadaEm, LocalDateTime enviadaEm, String erro,
+            Long comunicadoOriginalId) {}
+
+    @Transactional(readOnly = true)
+    public PaginaResponse<ProcessItem> processHistory(Long processId, int page, int size) {
+        var pagination = Paginacao.pagina(page, size);
+        if (!processes.existsById(processId)) {
+            throw new ResourceNotFoundException("Processo não encontrado: " + processId);
+        }
+        return PaginaResponse.from(communications.findByProcessoId(processId, pagination).map(c ->
+                new ProcessItem(c.getId(), c.getCanal(), c.getStatus(), c.getDestinatario(),
+                        c.getCriadaEm(), c.getEnviadaEm(), publicError(c),
+                        c.getComunicadoOriginal() == null ? null : c.getComunicadoOriginal().getId())));
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

@@ -61,6 +61,9 @@ public class PlatformService {
  }
  public PlatformAccount internalAccount() {
    admin();
+   return internalAccountForOperation();
+ }
+ private PlatformAccount internalAccountForOperation() {
    return accounts.findByInternalOperationsTrue().orElseThrow(()->error(503,"Canais internos indisponíveis."));
  }
  private PlatformAccount channelAccount(Long requested) {
@@ -150,8 +153,27 @@ public class PlatformService {
  }
  private PlatformInstance instance(Long accountId,Long id) { return ownedInstance(channelAccount(accountId),id); }
  private PlatformInstance ownedInstance(PlatformAccount account,Long id) { return instances.findByIdAndContaId(id,account.getId()).orElseThrow(()->error(404,"Instância não encontrada.")); }
+ public List<Map<String,Object>> operationalWhatsAppSenders() {
+   requireOperator();
+   return instances.findByContaIdOrderByIdAsc(internalAccountForOperation().getId())
+       .stream().map(this::instanceView).toList();
+ }
+ private void requireOperator() {
+   var role = currentUser().getTipo();
+   if (role != TipoUsuario.ADMINISTRADOR && role != TipoUsuario.FUNCIONARIO) {
+     throw error(403, "Acesso exclusivo da operação.");
+   }
+ }
+ public boolean operationalWhatsAppConnected(Long senderId, String defaultInstance) {
+   requireOperator();
+   String remoteName = senderId == null ? defaultInstance
+       : ownedInstance(internalAccountForOperation(), senderId).getRemoteName();
+   if (remoteName == null) return false;
+   return "open".equalsIgnoreCase(evolution.getStatus(remoteName).state());
+ }
  public PlatformInstance connectedInternalWhatsApp(Long id) {
-   var instance=ownedInstance(internalAccount(),id);
+   requireOperator();
+   var instance=ownedInstance(internalAccountForOperation(),id);
    String state;
    try {
        state=evolution.getStatus(instance.getRemoteName()).state();

@@ -113,6 +113,28 @@ public class AuthService {
     }
 
     @Transactional
+    public String importGooglePhoto(String credential, String authenticatedEmail) {
+        var identity = googleIdentityService.verify(credential);
+        var user = usuarioRepository.lockByEmail(authenticatedEmail.trim().toLowerCase(java.util.Locale.ROOT))
+                .filter(Usuario::isAtivo)
+                .orElseThrow(InvalidCredentialsException::new);
+        boolean matches = user.getGoogleSubject() == null
+                ? user.getEmail().equalsIgnoreCase(identity.email())
+                : user.getGoogleSubject().equals(identity.subject());
+        if (!matches) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Escolha a conta Google que corresponde ao seu perfil.");
+        }
+        if (identity.picture() == null || identity.picture().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Esta conta Google não tem foto. Você pode enviar uma imagem.");
+        }
+        user.setFoto(identity.picture());
+        usuarioRepository.save(user);
+        return identity.picture();
+    }
+
+    @Transactional
     public AuthResponse refresh(String rawRefreshToken) {
         RefreshToken refreshToken = refreshTokenRepository.findByTokenHash(hash(rawRefreshToken))
                 .filter(token -> !token.isRevoked())

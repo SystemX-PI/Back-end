@@ -51,6 +51,28 @@ class GoogleAuthServiceTest {
     }
 
     @Test
+    void importsPhotoForMatchingEmailWithoutLinkingGoogleLogin() {
+        Usuario existing = user(identity.email());
+        when(users.lockByEmail(identity.email())).thenReturn(Optional.of(existing));
+
+        assertEquals(identity.picture(), auth.importGooglePhoto("valid-google-token", identity.email()));
+        assertEquals(identity.picture(), existing.getFoto());
+        org.junit.jupiter.api.Assertions.assertNull(existing.getGoogleSubject());
+        verify(users).save(existing);
+    }
+
+    @Test
+    void photoImportRejectsGoogleIdentityFromAnotherAccount() {
+        Usuario existing = user("other@example.com");
+        when(users.lockByEmail(existing.getEmail())).thenReturn(Optional.of(existing));
+
+        var error = assertThrows(ResponseStatusException.class,
+                () -> auth.importGooglePhoto("valid-google-token", existing.getEmail()));
+        assertEquals(HttpStatus.FORBIDDEN, error.getStatusCode());
+        verify(users, never()).save(any());
+    }
+
+    @Test
     void loginUsesGoogleSubjectAndIssuesTheExistingApplicationSession() {
         Usuario existing = user("person@example.com");
         when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.of(existing));

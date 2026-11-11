@@ -76,6 +76,12 @@ public class AutenticacaoController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/google/photo")
+    public java.util.Map<String, String> importGooglePhoto(@Valid @RequestBody GoogleCredential request,
+            Principal principal) {
+        return java.util.Map.of("photo", service.importGooglePhoto(request.credential(), principal.getName()));
+    }
+
     @Operation(summary = "Renovar a sessão com o token de renovação")
     @SecurityRequirements
     @PostMapping("/refresh")
