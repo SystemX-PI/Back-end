@@ -56,6 +56,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/api/widget/session", "/api/widget/chat").permitAll()
                     .requestMatchers("/api/platform/clients/**").hasRole(ROLE_ADMINISTRADOR)
                     .requestMatchers("/api/platform/operation-channels/**").hasRole(ROLE_ADMINISTRADOR)
+                    .requestMatchers(HttpMethod.PATCH, "/api/processos-contemplacao/*/responsavel").hasRole(ROLE_ADMINISTRADOR)
                     .requestMatchers("/api/platform/**").hasAnyRole(ROLE_ADMINISTRADOR, "CLIENTE", "USUARIO")
                     .requestMatchers("/api/portal/**").hasRole("CLIENTE")
                     .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
