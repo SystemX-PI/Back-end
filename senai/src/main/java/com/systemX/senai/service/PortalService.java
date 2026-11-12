@@ -31,7 +31,14 @@ public class PortalService {
             p.getContemplacao().getCota().getNumero(), p.getContemplacao().getValor(), docs, historico);
     }
     private ProcessoResponse resumo(ProcessoContemplacao p) {
-        return new ProcessoResponse(p.getId(), p.getContemplacao().getId(), p.getResponsavel() == null ? null : p.getResponsavel().getId(),
+        var contemplacao = p.getContemplacao();
+        var cota = contemplacao.getCota();
+        var grupo = cota.getGrupo();
+        return new ProcessoResponse(p.getId(), contemplacao.getId(),
+            p.getCliente() == null ? null : p.getCliente().getNome(),
+            p.getCliente() == null ? null : p.getCliente().getEmail(),
+            grupo == null ? null : grupo.getNumero(), cota.getNumero(), contemplacao.getValor(),
+            p.getResponsavel() == null ? null : p.getResponsavel().getId(),
             p.getStatus(), p.getCriadoEm(), p.getAtualizadoEm());
     }
 }

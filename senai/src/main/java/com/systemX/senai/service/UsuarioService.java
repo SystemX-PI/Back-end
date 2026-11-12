@@ -71,8 +71,13 @@ public class UsuarioService {
                 "Mantenha pelo menos um administrador ativo.");
     }
     @Transactional(readOnly = true)
-    public com.systemX.senai.dto.PaginaResponse<UsuarioResponse> listarPagina(int page, int size, String q, com.systemX.senai.enums.TipoUsuario tipo) {
-        return com.systemX.senai.dto.PaginaResponse.from(repository.findAll(Paginacao.<Usuario>busca(q, "nome", "email") .and((root, query, cb) -> tipo == null ? cb.conjunction() : cb.equal(root.get("tipo"), tipo)), Paginacao.pagina(page, size)).map(this::toResponse));
+    public com.systemX.senai.dto.PaginaResponse<UsuarioResponse> listarPagina(int page, int size, String q,
+            com.systemX.senai.enums.TipoUsuario tipo, Boolean ativo) {
+        var filtro = Paginacao.<Usuario>busca(q, "nome", "email")
+                .and((root, query, cb) -> tipo == null ? cb.conjunction() : cb.equal(root.get("tipo"), tipo))
+                .and((root, query, cb) -> ativo == null ? cb.conjunction() : cb.equal(root.get("ativo"), ativo));
+        return com.systemX.senai.dto.PaginaResponse.from(
+                repository.findAll(filtro, Paginacao.pagina(page, size)).map(this::toResponse));
     }
     private UsuarioResponse toResponse(Usuario user) { return new UsuarioResponse(user.getId(), user.getNome(), user.getEmail(), user.getTipo(), user.isAtivo()); }
 }

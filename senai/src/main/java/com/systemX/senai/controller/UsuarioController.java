@@ -32,8 +32,10 @@ public class UsuarioController {
     public com.systemX.senai.dto.PaginaResponse<UsuarioResponse> pagina(
             @org.springframework.web.bind.annotation.RequestParam(defaultValue="0") int page,
             @org.springframework.web.bind.annotation.RequestParam(defaultValue="20") int size,
-            @org.springframework.web.bind.annotation.RequestParam(defaultValue="") String q, @org.springframework.web.bind.annotation.RequestParam(required=false) com.systemX.senai.enums.TipoUsuario tipo) {
-        return service.listarPagina(page, size, q, tipo);
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue="") String q,
+            @org.springframework.web.bind.annotation.RequestParam(required=false) com.systemX.senai.enums.TipoUsuario tipo,
+            @org.springframework.web.bind.annotation.RequestParam(required=false) Boolean ativo) {
+        return service.listarPagina(page, size, q, tipo, ativo);
     }
     @GetMapping("/{id}")
     public UsuarioResponse consultar(@PathVariable Long id) { return service.consultar(id); }
