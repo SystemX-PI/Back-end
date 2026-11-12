@@ -72,6 +72,11 @@ public class UsuarioService {
     }
     @Transactional(readOnly = true)
     public com.systemX.senai.dto.PaginaResponse<UsuarioResponse> listarPagina(int page, int size, String q,
+            com.systemX.senai.enums.TipoUsuario tipo) {
+        return listarPagina(page, size, q, tipo, null);
+    }
+    @Transactional(readOnly = true)
+    public com.systemX.senai.dto.PaginaResponse<UsuarioResponse> listarPagina(int page, int size, String q,
             com.systemX.senai.enums.TipoUsuario tipo, Boolean ativo) {
         var filtro = Paginacao.<Usuario>busca(q, "nome", "email")
                 .and((root, query, cb) -> tipo == null ? cb.conjunction() : cb.equal(root.get("tipo"), tipo))
