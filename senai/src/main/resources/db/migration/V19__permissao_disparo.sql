@@ -1,0 +1,12 @@
+ALTER TABLE equipe_grupo ADD COLUMN permite_disparo BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE TABLE disparo_manual_empresa (
+ id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ conta_id BIGINT NOT NULL,
+ usuario_id BIGINT,
+ canal VARCHAR(12) NOT NULL,
+ destino VARCHAR(255) NOT NULL,
+ estado VARCHAR(12) NOT NULL,
+ criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (conta_id) REFERENCES platform_account(id),
+ FOREIGN KEY (usuario_id) REFERENCES usuario(id) ON DELETE SET NULL
+);

@@ -171,6 +171,14 @@ public class PlatformService {
    if (remoteName == null) return false;
    return "open".equalsIgnoreCase(evolution.getStatus(remoteName).state());
  }
+ public PlatformAccount contaParaEnvio(Long id) {
+   var conta=account(id);
+   if(!active(conta)) throw error(402,"A conta precisa estar ativa para enviar notificações.");
+   return conta;
+ }
+ public String remetenteWhatsApp(PlatformAccount conta, Long id) {
+   return ownedInstance(conta,id).getRemoteName();
+ }
  public PlatformInstance connectedInternalWhatsApp(Long id) {
    requireOperator();
    var instance=ownedInstance(internalAccountForOperation(),id);

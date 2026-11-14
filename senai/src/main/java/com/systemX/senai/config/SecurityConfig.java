@@ -59,6 +59,7 @@ public class SecurityConfig {
                     .requestMatchers("/api/platform/**").hasAnyRole(ROLE_ADMINISTRADOR, "CLIENTE", "USUARIO")
                     .requestMatchers("/api/portal/**").hasRole("CLIENTE")
                     .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplados-empresa").permitAll()
                     .requestMatchers("/api/configuracoes/**", "/api/integracoes/whatsapp/**").hasRole(ROLE_ADMINISTRADOR)
                     .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                     .requestMatchers("/api/usuarios", "/api/usuarios/**").hasRole(ROLE_ADMINISTRADOR)
