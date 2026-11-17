@@ -1,10 +1,13 @@
 package com.systemX.senai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,7 +50,7 @@ class GoogleAuthServiceTest {
                 googleIdentity, platform);
         identity = new GoogleIdentityService.Identity(
                 "google-sub-123", "person@example.com", "Person Example", "https://photo.example/avatar.jpg");
-        when(googleIdentity.verify("valid-google-token")).thenReturn(identity);
+        lenient().when(googleIdentity.verify("valid-google-token")).thenReturn(identity);
     }
 
     @Test
@@ -135,6 +138,52 @@ class GoogleAuthServiceTest {
         assertNotNull(response.token());
         assertNotNull(response.refreshToken());
         verify(refreshTokens).save(any());
+        verify(platform, never()).signupWithGoogle(any(), any());
+    }
+
+    @Test
+    void registrationStatusRejectsAnAlreadyLinkedGoogleSubject() {
+        when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.of(user(identity.email())));
+
+        assertFalse(auth.canRegisterWithGoogle("valid-google-token"));
+        verify(users, never()).save(any());
+        verify(refreshTokens, never()).save(any());
+        verify(platform, never()).signupWithGoogle(any(), any());
+    }
+
+    @Test
+    void registrationStatusRejectsAnEmailOwnedByAnotherGoogleSubject() {
+        when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.empty());
+        when(users.findByEmail(identity.email())).thenReturn(Optional.of(user(identity.email())));
+
+        assertFalse(auth.canRegisterWithGoogle("valid-google-token"));
+        verify(users, never()).save(any());
+        verify(refreshTokens, never()).save(any());
+        verify(platform, never()).signupWithGoogle(any(), any());
+    }
+
+    @Test
+    void registrationStatusAllowsANewIdentityWithoutCreatingAnAccountOrSession() {
+        when(users.findByGoogleSubject(identity.subject())).thenReturn(Optional.empty());
+        when(users.findByEmail(identity.email())).thenReturn(Optional.empty());
+
+        assertTrue(auth.canRegisterWithGoogle("valid-google-token"));
+        verify(users, never()).save(any());
+        verify(refreshTokens, never()).save(any());
+        verify(platform, never()).signupWithGoogle(any(), any());
+    }
+
+    @Test
+    void registrationStatusRejectsAnInvalidGoogleToken() {
+        when(googleIdentity.verify("invalid-google-token"))
+                .thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Autenticação inválida."));
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> auth.canRegisterWithGoogle("invalid-google-token"));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, error.getStatusCode());
+        verify(users, never()).save(any());
+        verify(refreshTokens, never()).save(any());
         verify(platform, never()).signupWithGoogle(any(), any());
     }
 
