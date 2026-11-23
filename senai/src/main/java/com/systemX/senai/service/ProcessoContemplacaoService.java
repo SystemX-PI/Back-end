@@ -42,6 +42,11 @@ public class ProcessoContemplacaoService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Esta mudança de status não está disponível para a etapa atual. Consulte o andamento do processo.");
         }
+        if (request.status() == StatusProcesso.CLIENTE_CONTATADO
+                && (request.observacao() == null || request.observacao().isBlank())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Descreva a evidência de contato confirmado com o cliente.");
+        }
         HistoricoProcesso historico = new HistoricoProcesso();
         historico.setProcesso(processo);
         historico.setStatusAnterior(processo.getStatus());

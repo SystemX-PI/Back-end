@@ -37,17 +37,22 @@ public class NotificationHistoryService {
 
     public record ProcessItem(Long id, CanalComunicacao canal, StatusComunicacao status,
             String destinatario, LocalDateTime criadaEm, LocalDateTime enviadaEm, String erro,
-            Long comunicadoOriginalId) {}
+            Long comunicadoOriginalId, com.systemX.senai.enums.EstadoDespacho estadoDespacho,
+            boolean reconciliavel) {}
 
     @Transactional(readOnly = true)
     public PaginaResponse<ProcessItem> processHistory(Long processId, int page, int size) {
         var pagination = Paginacao.pagina(page, size);
-        acesso.conferirProcesso(processes.findById(processId)
+        var operador = auditoria.exigirOperador();
+        boolean podeReconciliar = operador.getContaId() == null
+                || operador.getTipo() == com.systemX.senai.enums.TipoUsuario.ADMINISTRADOR;
+        acesso.conferirProcesso(operador, processes.findById(processId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processId)));
         return PaginaResponse.from(communications.findByProcessoId(processId, pagination).map(c ->
                 new ProcessItem(c.getId(), c.getCanal(), c.getStatus(), c.getDestinatario(),
                         c.getCriadaEm(), c.getEnviadaEm(), publicError(c),
-                        c.getComunicadoOriginal() == null ? null : c.getComunicadoOriginal().getId())));
+                        c.getComunicadoOriginal() == null ? null : c.getComunicadoOriginal().getId(), c.getEstadoDespacho(),
+                        podeReconciliar && c.getEstadoDespacho() == com.systemX.senai.enums.EstadoDespacho.INCERTO)));
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

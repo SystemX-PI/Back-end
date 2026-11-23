@@ -38,12 +38,14 @@ public class IntegracaoController {
     private final IntegracaoContempladoService integracaoService;
     private final BaixaService baixaService;
     private final NotificationHistoryService notifications;
+    private final com.systemX.senai.service.ComunicacaoOutbox outbox;
 
     public IntegracaoController(IntegracaoContempladoService integracaoService, BaixaService baixaService,
-            NotificationHistoryService notifications) {
+            NotificationHistoryService notifications, com.systemX.senai.service.ComunicacaoOutbox outbox) {
         this.integracaoService = integracaoService;
         this.baixaService = baixaService;
         this.notifications = notifications;
+        this.outbox = outbox;
     }
 
     @Operation(summary = "Receber uma contemplação do sistema parceiro",
@@ -118,6 +120,13 @@ public class IntegracaoController {
             @Valid @RequestBody WhatsAppRequest request,
             @org.springframework.web.bind.annotation.RequestHeader(name = "Idempotency-Key", required = false) java.util.UUID chave) {
         return integracaoService.enviarWhatsApp(processoId, request, chave);
+    }
+
+    @PostMapping("/processos/{processoId}/comunicacoes/{tentativaId}/reconciliacao")
+    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reconciliar(@PathVariable Long processoId, @PathVariable Long tentativaId,
+            @Valid @RequestBody com.systemX.senai.dto.ReconciliarComunicacaoRequest request) {
+        outbox.reconciliar(processoId, tentativaId, request);
     }
 
     @PostMapping("/processos/{processoId}/baixa")

@@ -8,5 +8,6 @@ public record CanalComunicacaoResponse(
         String status,
         String erro,
         LocalDateTime criadaEm,
-        LocalDateTime enviadaEm) {
+        LocalDateTime enviadaEm,
+        com.systemX.senai.enums.EstadoDespacho estadoDespacho) {
 }

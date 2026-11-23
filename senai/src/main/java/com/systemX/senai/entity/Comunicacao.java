@@ -20,6 +20,10 @@ public class Comunicacao {
     private String chaveOperacao;
     private Long remetenteSolicitadoId;
     private String provedorMensagemId;
+    @Enumerated(EnumType.STRING) @Column(length = 24)
+    private EstadoDespacho estadoDespacho;
+    private LocalDateTime despachoIniciadoEm;
+    private String instanciaDespacho;
     private String destinatario;
     private String assunto;
     @Column(length = 2000) private String mensagem;

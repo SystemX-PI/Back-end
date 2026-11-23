@@ -172,9 +172,12 @@ public class PlatformService {
    if (remoteName == null) return false;
    return "open".equalsIgnoreCase(evolution.getStatus(remoteName).state());
  }
- public PlatformInstance connectedInternalWhatsApp(Long id) {
+ public PlatformInstance internalWhatsAppSender(Long id) {
    requireOperator();
-   var instance=ownedInstance(internalAccountForOperation(),id);
+   return ownedInstance(internalAccountForOperation(), id);
+ }
+ public PlatformInstance connectedInternalWhatsApp(Long id) {
+   var instance=internalWhatsAppSender(id);
    String state;
    try {
        state=evolution.getStatus(instance.getRemoteName()).state();
