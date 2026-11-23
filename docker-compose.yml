@@ -28,6 +28,7 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
       JWT_SECRET: local-development-secret-change-before-deploying
       SPRING_PROFILES_ACTIVE: local
+      PASSWORD_RESET_TRUSTED_PROXIES: "${PASSWORD_RESET_TRUSTED_PROXIES:-}"
       LOCAL_ADMIN_EMAIL: ${LOCAL_ADMIN_EMAIL:-}
       LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-}
       DEV_TOKEN_ENABLED: "false"

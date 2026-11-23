@@ -2,7 +2,7 @@ package com.systemX.senai.service;
 import com.systemX.senai.entity.*;
 import com.systemX.senai.repository.*;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+
 import org.springframework.transaction.support.*;
 import org.springframework.beans.factory.annotation.*;
 import org.springframework.core.task.TaskExecutor;
@@ -23,20 +23,25 @@ public class PasswordResetService {
  private final TaskExecutor executor;
  private final byte[] secret;
  private final SecureRandom random=new SecureRandom();
- private final Map<String,Long> requests=new LinkedHashMap<>();
- public PasswordResetService(UsuarioRepository users,PasswordResetTokenRepository tokens,org.springframework.security.crypto.password.PasswordEncoder encoder,EmailService mail,@Qualifier("passwordResetMailExecutor") TaskExecutor executor,@Value("${app.jwt.secret}") String secret) {
-  this.users=users;this.tokens=tokens;this.encoder=encoder;this.mail=mail;this.executor=executor;this.secret=secret.getBytes(StandardCharsets.UTF_8);
+ private final PasswordResetRateLimiter rateLimiter;
+ private final TransactionTemplate transactions;
+ public PasswordResetService(UsuarioRepository users,PasswordResetTokenRepository tokens,org.springframework.security.crypto.password.PasswordEncoder encoder,EmailService mail,@Qualifier("passwordResetMailExecutor") TaskExecutor executor,PasswordResetRateLimiter rateLimiter,TransactionTemplate transactions,@Value("${app.jwt.secret}") String secret) {
+  this.users=users;this.tokens=tokens;this.encoder=encoder;this.mail=mail;this.executor=executor;this.rateLimiter=rateLimiter;this.transactions=transactions;this.secret=secret.getBytes(StandardCharsets.UTF_8);
  }
- private synchronized void throttle(String client) {
-  long now=System.currentTimeMillis();requests.entrySet().removeIf(e->now-e.getValue()>60000);
-  if(requests.containsKey(client))throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Aguarde um minuto antes de solicitar outro código.");
-  if(requests.size()>=5000)throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Muitas solicitações. Tente novamente em um minuto.");
-  requests.put(client,now);
+ private ResponseStatusException tooManyRequests() {
+  return new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"Muitas tentativas. Aguarde um minuto e tente novamente.");
  }
- @Transactional public void request(String email,String client) {
+ public void request(String email,String client) {
   if(!mail.isEnabled())throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"A recuperação por e-mail ainda não está configurada. Contate o administrador da plataforma.");
-  throttle(client);
-  var user=users.lockByEmail(email.trim().toLowerCase(Locale.ROOT)).filter(Usuario::isAtivo).orElse(null);
+  String normalizedEmail=email.trim().toLowerCase(Locale.ROOT);
+  var decision=rateLimiter.request(client,normalizedEmail);
+  if (decision == PasswordResetRateLimiter.Decision.ORIGIN_LIMIT
+          || decision == PasswordResetRateLimiter.Decision.GLOBAL_LIMIT) throw tooManyRequests();
+  if(decision==PasswordResetRateLimiter.Decision.EMAIL_LIMIT)return;
+  transactions.executeWithoutResult(status -> requestLocked(normalizedEmail));
+ }
+ private void requestLocked(String normalizedEmail) {
+  var user=users.lockByEmail(normalizedEmail).filter(Usuario::isAtivo).orElse(null);
   if(user==null)return;
   var token=tokens.lockByUsuarioId(user.getId()).orElseGet(PasswordResetToken::new);
   if(token.getRequestedAt()!=null&&token.getRequestedAt().isAfter(Instant.now().minusSeconds(60)))return;
@@ -47,8 +52,21 @@ public class PasswordResetService {
    try{executor.execute(()->{try{mail.send(recipient,"Código para redefinir sua senha","Seu código de recuperação é: "+code+"\n\nEle expira em 5 minutos e pode ser usado uma única vez.\nSe você não solicitou esta alteração, ignore este e-mail.");}catch(Exception e){org.slf4j.LoggerFactory.getLogger(PasswordResetService.class).warn("Não foi possível entregar um e-mail de recuperação. Verifique o remetente SMTP.");}});}catch(Exception e){org.slf4j.LoggerFactory.getLogger(PasswordResetService.class).warn("Fila de recuperação por e-mail indisponível.");}
   }});
  }
- @Transactional(noRollbackFor=ResponseStatusException.class) public void reset(String email,String code,String password) {
+ public void reset(String email,String code,String password,String origin) {
+  if(!rateLimiter.reset(origin))throw tooManyRequests();
   ProfileService.validatePassword(password);
+  // Commit a rejected code's attempt counter before returning its validation error.
+  var error = transactions.execute(status -> {
+   try {
+    resetLocked(email,code,password);
+    return null;
+   } catch (ResponseStatusException ex) {
+    return ex;
+   }
+  });
+  if (error != null) throw error;
+ }
+ private void resetLocked(String email,String code,String password) {
   var user=users.lockByEmail(email.trim().toLowerCase(Locale.ROOT)).filter(Usuario::isAtivo).orElseThrow(this::invalid);
   var token=tokens.lockByUsuarioId(user.getId()).orElseThrow(this::invalid);
   if(token.isUsed()||token.getAttempts()>=5||!token.getExpiresAt().isAfter(Instant.now())||token.getAuthVersion()!=user.getVersaoAutenticacao())throw invalid();

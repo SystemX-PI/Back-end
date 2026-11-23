@@ -26,11 +26,13 @@ import jakarta.validation.Valid;
 public class AutenticacaoController {
     private final AuthService service;
     private final com.systemX.senai.service.PasswordResetService recovery;
+    private final com.systemX.senai.config.PasswordResetOrigin resetOrigin;
     private final com.systemX.senai.service.UsuarioService usuarios;
 
-    public AutenticacaoController(AuthService service, com.systemX.senai.service.UsuarioService usuarios,com.systemX.senai.service.PasswordResetService recovery) {
+    public AutenticacaoController(AuthService service, com.systemX.senai.service.UsuarioService usuarios,com.systemX.senai.service.PasswordResetService recovery, com.systemX.senai.config.PasswordResetOrigin resetOrigin) {
         this.service = service;
         this.recovery = recovery;
+        this.resetOrigin = resetOrigin;
         this.usuarios = usuarios;
     }
 
@@ -101,12 +103,12 @@ public class AutenticacaoController {
     @Operation(summary = "Solicitar código de recuperação")
     @SecurityRequirements
     @PostMapping("/forgot-password") public Object forgot(@Valid @RequestBody ForgotPassword body,jakarta.servlet.http.HttpServletRequest request) {
-        recovery.request(body.email(),request.getRemoteAddr());
+        recovery.request(body.email(),resetOrigin.resolve(request));
         return java.util.Map.of("message","Se este e-mail estiver cadastrado, você receberá um código de recuperação.","expiresIn",300);
     }
     @Operation(summary = "Redefinir senha com o código de recuperação")
     @SecurityRequirements
-    @PostMapping("/reset-password") public ResponseEntity<Void> reset(@Valid @RequestBody ResetPassword body) {
-        recovery.reset(body.email(),body.token(),body.newPassword());return ResponseEntity.noContent().build();
+    @PostMapping("/reset-password") public ResponseEntity<Void> reset(@Valid @RequestBody ResetPassword body,jakarta.servlet.http.HttpServletRequest request) {
+        recovery.reset(body.email(),body.token(),body.newPassword(),resetOrigin.resolve(request));return ResponseEntity.noContent().build();
     }
 }
