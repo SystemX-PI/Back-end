@@ -34,7 +34,7 @@ public class ProcessoContemplacaoService {
     @Transactional
     public ProcessoResponse atualizarStatus(Long id, StatusProcessoRequest request) {
         var usuario = auditoria.exigirOperador();
-        ProcessoContemplacao processo = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id));
+        ProcessoContemplacao processo = repository.bloquearPorId(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id));
         if (!processo.getStatus().transicoesPermitidas().contains(request.status())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Esta mudança de status não está disponível para a etapa atual. Consulte o andamento do processo.");
