@@ -3,8 +3,10 @@ package com.systemX.senai.service;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.systemX.senai.dto.ProcessoResponse;
 import com.systemX.senai.dto.StatusProcessoRequest;
@@ -33,6 +35,10 @@ public class ProcessoContemplacaoService {
     public ProcessoResponse atualizarStatus(Long id, StatusProcessoRequest request) {
         var usuario = auditoria.exigirOperador();
         ProcessoContemplacao processo = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id));
+        if (!processo.getStatus().transicoesPermitidas().contains(request.status())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Esta mudança de status não está disponível para a etapa atual. Consulte o andamento do processo.");
+        }
         HistoricoProcesso historico = new HistoricoProcesso();
         historico.setProcesso(processo);
         historico.setStatusAnterior(processo.getStatus());

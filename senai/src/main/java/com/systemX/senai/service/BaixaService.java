@@ -3,8 +3,10 @@ package com.systemX.senai.service;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.systemX.senai.dto.BaixaRequest;
 import com.systemX.senai.dto.BaixaResponse;
@@ -35,8 +37,9 @@ public class BaixaService {
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
         Baixa existente = baixaRepository.findByProcessoId(processoId).orElse(null);
         if (existente != null) return toResponse(existente);
-        if (processo.getStatus() == StatusProcesso.CANCELADO) {
-            throw new IllegalStateException("Processo cancelado não pode receber baixa");
+        if (processo.getStatus() != StatusProcesso.EM_PROCESSO_DE_BAIXA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A baixa só pode ser concluída quando o processo está na etapa Em processo de baixa.");
         }
         Baixa baixa = new Baixa();
         baixa.setProcesso(processo);
