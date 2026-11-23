@@ -1,6 +1,10 @@
 package com.systemX.senai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -9,13 +13,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.systemX.senai.config.JwtService;
@@ -23,6 +37,8 @@ import com.systemX.senai.entity.*;
 import com.systemX.senai.enums.StatusProcesso;
 import com.systemX.senai.enums.TipoContemplacao;
 import com.systemX.senai.enums.TipoUsuario;
+import com.systemX.senai.service.AuditoriaService;
+import jakarta.servlet.ServletException;
 
 import jakarta.persistence.EntityManager;
 
@@ -36,6 +52,26 @@ class ProcessoOperacaoIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired JwtService jwt;
     @Autowired EntityManager em;
+    @Autowired TransactionTemplate transactions;
+    @MockitoSpyBean AuditoriaService auditoria;
+
+    @DynamicPropertySource
+    static void bancoDeTeste(DynamicPropertyRegistry registry) {
+        String port = System.getProperty("systemx.test.mysql.port");
+        if (port == null) {
+            registry.add("spring.datasource.url", () -> "jdbc:h2:mem:processo-operacao;MODE=MySQL;DB_CLOSE_DELAY=-1");
+            return;
+        }
+        int mysqlPort = Integer.parseInt(port);
+        if (mysqlPort < 1024 || mysqlPort > 65535) throw new IllegalArgumentException("Porta de teste inválida");
+        registry.add("spring.datasource.url",
+                () -> "jdbc:mysql://127.0.0.1:" + mysqlPort + "/systemx_lote03_test?allowPublicKeyRetrieval=true&sslMode=DISABLED");
+        registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
+        registry.add("spring.datasource.username", () -> "systemx_lote03_test");
+        registry.add("spring.datasource.password", () -> System.getenv("SYSTEMX_LOTE03_MYSQL_PASSWORD"));
+        registry.add("spring.flyway.enabled", () -> true);
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
+    }
 
     @Test
     void statusRegistraOperadorDoJwtMesmoComIdLegadoNoCorpo() throws Exception {
@@ -151,6 +187,146 @@ class ProcessoOperacaoIntegrationTest {
                 .content("{\"status\":\"CANCELADO\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.transicoesPermitidas").isEmpty());
         negarTransicao(operador, emAnalise, StatusProcesso.EM_PROCESSO_DE_BAIXA);
+    }
+
+    @Test
+    void cancelamentoEstaDisponivelApenasParaOrigensAtivas() throws Exception {
+        var operador = usuario(TipoUsuario.FUNCIONARIO, "cancelamento");
+        for (var origem : StatusProcesso.values()) {
+            var processo = processo("cancelar-" + origem, origem);
+            if (origem == StatusProcesso.FINALIZADO || origem == StatusProcesso.CANCELADO) {
+                negarTransicao(operador, processo, StatusProcesso.CANCELADO);
+            } else {
+                mvc.perform(patch(PROCESSOS + "/{id}/status", processo.getId())
+                        .header("Authorization", token(operador)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"CANCELADO\"}"))
+                        .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELADO"));
+            }
+        }
+    }
+
+    @Test
+    void comprovanteExigePerfilEContaEPortalMostraConclusaoAoTitular() throws Exception {
+        var conta = conta("A");
+        var outraConta = conta("B");
+        var titular = usuario(TipoUsuario.CLIENTE, "titular-baixa");
+        titular.setContaId(conta.getId());
+        var operador = usuario(TipoUsuario.FUNCIONARIO, "operador-conta-a");
+        operador.setContaId(conta.getId());
+        var externo = usuario(TipoUsuario.FUNCIONARIO, "operador-conta-b");
+        externo.setContaId(outraConta.getId());
+        var processo = processo("conta-baixa", StatusProcesso.EM_PROCESSO_DE_BAIXA);
+        processo.setCliente(titular);
+        em.flush();
+        var id = processo.getId();
+
+        solicitarBaixa(id, token(externo), "indevida").andExpect(status().isNotFound());
+        var original = solicitarBaixa(id, token(operador), "Observação original")
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        solicitarBaixa(id, token(externo), "indevida").andExpect(status().isNotFound());
+        mvc.perform(get(BAIXA, id).header("Authorization", token(externo))).andExpect(status().isNotFound());
+        solicitarBaixa(id, token(titular), "indevida").andExpect(status().isForbidden());
+        mvc.perform(get(BAIXA, id).header("Authorization", token(titular))).andExpect(status().isForbidden());
+        mvc.perform(get(BAIXA, id)).andExpect(status().isUnauthorized());
+        var consulta = mvc.perform(get(BAIXA, id).header("Authorization", token(operador)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals(original, consulta);
+        mvc.perform(get("/api/portal/processos/{id}", id).header("Authorization", token(titular)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.historico[0].statusAnterior").value("EM_PROCESSO_DE_BAIXA"))
+                .andExpect(jsonPath("$.historico[0].novoStatus").value("FINALIZADO"))
+                .andExpect(jsonPath("$.historico[0].observacao").value("Observação original"));
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void baixasSimultaneasRetornamMesmoComprovanteEGravamUmaVez() throws Exception {
+        var fixture = criarFixture("concorrente");
+        var encontro = new CyclicBarrier(2);
+        doAnswer(invocation -> {
+            var operador = invocation.callRealMethod();
+            encontro.await(10, TimeUnit.SECONDS);
+            return operador;
+        }).when(auditoria).exigirOperador();
+
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var primeira = executor.submit(() -> solicitarBaixa(fixture.id(), fixture.primeiroToken(), "Primeira")
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            var segunda = executor.submit(() -> solicitarBaixa(fixture.id(), fixture.segundoToken(), "Segunda")
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            assertEquals(primeira.get(20, TimeUnit.SECONDS), segunda.get(20, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
+
+        transactions.executeWithoutResult(status -> {
+            Long id = fixture.id();
+            assertEquals(1L, contarEventos("Baixa", "processo.id", id));
+            assertEquals(1L, contarEventos("HistoricoProcesso", "processo.id", id));
+            assertEquals(1L, contarEventos("Auditoria", "registroId", id));
+            var baixa = em.createQuery("select b from Baixa b where b.processo.id = :id", Baixa.class)
+                    .setParameter("id", id).getSingleResult();
+            var historico = em.createQuery("select h from HistoricoProcesso h where h.processo.id = :id", HistoricoProcesso.class)
+                    .setParameter("id", id).getSingleResult();
+            assertEquals(StatusProcesso.EM_PROCESSO_DE_BAIXA, historico.getStatusAnterior());
+            assertEquals(StatusProcesso.FINALIZADO, historico.getNovoStatus());
+            assertEquals(StatusProcesso.FINALIZADO, baixa.getProcesso().getStatus());
+            assertEquals(baixa.getUsuario().getId(), historico.getUsuario().getId());
+            assertEquals(baixa.getData(), historico.getData());
+            assertEquals(baixa.getObservacao(), historico.getObservacao());
+            conferirAuditoria(baixa.getProcesso(), baixa.getUsuario(), "Baixa concluída");
+        });
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void falhaAposGravacoesReverteBaixaProcessoHistoricoEAuditoria() {
+        var fixture = criarFixture("rollback");
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            em.flush();
+            throw new IllegalStateException("Falha de teste após as gravações");
+        }).when(auditoria).registrar("Baixa concluída", "Processo", fixture.id(), "Processo finalizado");
+
+        var erro = assertThrows(ServletException.class,
+                () -> solicitarBaixa(fixture.id(), fixture.primeiroToken(), "Reverter"));
+        assertTrue(erro.getCause().getMessage().contains("Falha de teste"));
+        transactions.executeWithoutResult(status -> {
+            Long id = fixture.id();
+            assertEquals(0L, contarEventos("Baixa", "processo.id", id));
+            assertEquals(0L, contarEventos("HistoricoProcesso", "processo.id", id));
+            assertEquals(0L, contarEventos("Auditoria", "registroId", id));
+            var processo = em.find(ProcessoContemplacao.class, id);
+            assertEquals(StatusProcesso.EM_PROCESSO_DE_BAIXA, processo.getStatus());
+            assertNull(processo.getResponsavel());
+        });
+    }
+
+    private ResultActions solicitarBaixa(Long id, String token, String observacao)
+            throws Exception {
+        return mvc.perform(post(BAIXA, id).header("Authorization", token).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"observacao\":\"%s\"}".formatted(observacao)));
+    }
+
+    private record Fixture(Long id, String primeiroToken, String segundoToken) {}
+
+    private Fixture criarFixture(String codigo) {
+        String referencia = codigo + "-" + UUID.randomUUID().toString().substring(0, 8);
+        return transactions.execute(status -> {
+            var primeiro = usuario(TipoUsuario.FUNCIONARIO, referencia + "-primeiro");
+            var segundo = usuario(TipoUsuario.ADMINISTRADOR, referencia + "-segundo");
+            var processo = processo(referencia, StatusProcesso.EM_PROCESSO_DE_BAIXA);
+            return new Fixture(processo.getId(), token(primeiro), token(segundo));
+        });
+    }
+
+    private PlatformAccount conta(String nome) {
+        var conta = new PlatformAccount();
+        conta.setNome(nome);
+        conta.setBrandName(nome);
+        em.persist(conta);
+        return conta;
     }
 
     private void negarTransicao(Usuario operador, ProcessoContemplacao processo, StatusProcesso destino)
