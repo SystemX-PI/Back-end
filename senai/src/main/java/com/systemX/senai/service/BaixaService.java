@@ -13,23 +13,27 @@ import org.springframework.web.server.ResponseStatusException;
 import com.systemX.senai.dto.BaixaRequest;
 import com.systemX.senai.dto.BaixaResponse;
 import com.systemX.senai.entity.Baixa;
+import com.systemX.senai.entity.HistoricoProcesso;
 import com.systemX.senai.entity.ProcessoContemplacao;
 import com.systemX.senai.entity.Usuario;
 import com.systemX.senai.enums.StatusProcesso;
 import com.systemX.senai.exception.ResourceNotFoundException;
 import com.systemX.senai.repository.BaixaRepository;
+import com.systemX.senai.repository.HistoricoProcessoRepository;
 import com.systemX.senai.repository.ProcessoContemplacaoRepository;
 
 @Service
 public class BaixaService {
     private final BaixaRepository baixaRepository;
     private final ProcessoContemplacaoRepository processoRepository;
+    private final HistoricoProcessoRepository historicoRepository;
     private final AuditoriaService auditoria;
 
     public BaixaService(BaixaRepository baixaRepository, ProcessoContemplacaoRepository processoRepository,
-            AuditoriaService auditoria) {
+            HistoricoProcessoRepository historicoRepository, AuditoriaService auditoria) {
         this.baixaRepository = baixaRepository;
         this.processoRepository = processoRepository;
+        this.historicoRepository = historicoRepository;
         this.auditoria = auditoria;
     }
 
@@ -51,12 +55,22 @@ public class BaixaService {
         baixa.setUsuario(usuario);
         baixa.setData(LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS));
         baixa.setObservacao(request.observacao());
+        var statusAnterior = processo.getStatus();
         processo.setStatus(StatusProcesso.FINALIZADO);
         processo.setResponsavel(usuario);
         processo.setAtualizadoEm(baixa.getData());
         processoRepository.save(processo);
+        baixaRepository.save(baixa);
+        historicoRepository.save(HistoricoProcesso.builder()
+                .processo(processo)
+                .statusAnterior(statusAnterior)
+                .novoStatus(StatusProcesso.FINALIZADO)
+                .usuario(usuario)
+                .data(baixa.getData())
+                .observacao(baixa.getObservacao())
+                .build());
         auditoria.registrar("Baixa concluída", "Processo", processoId, "Processo finalizado");
-        return toResponse(baixaRepository.save(baixa));
+        return toResponse(baixa);
     }
 
     @Transactional(readOnly = true)
