@@ -33,6 +33,10 @@ public class PlatformAccount {
  @Column(length=30) private String stripeSubscriptionStatus;
  @JsonIgnore @Column(length=255, unique=true) private String stripeCheckoutSessionId;
  @JsonIgnore private Instant stripeCheckoutExpiresAt;
+ @JsonIgnore @Column(length=36) private String stripeCheckoutAttempt;
+ @JsonIgnore @Column(length=10) private String stripeCheckoutAttemptMethod;
+ @JsonIgnore private Instant stripeCheckoutAttemptAt;
+ @JsonIgnore private Long stripeSubscriptionEventAt;
  @Column(nullable=false) private boolean professional = false;
  @Column(nullable=false) private boolean suspended = false;
 }
