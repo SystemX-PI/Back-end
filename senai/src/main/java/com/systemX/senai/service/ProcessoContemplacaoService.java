@@ -10,30 +10,29 @@ import com.systemX.senai.dto.ProcessoResponse;
 import com.systemX.senai.dto.StatusProcessoRequest;
 import com.systemX.senai.entity.HistoricoProcesso;
 import com.systemX.senai.entity.ProcessoContemplacao;
-import com.systemX.senai.entity.Usuario;
+import com.systemX.senai.dto.PaginaResponse;
+import com.systemX.senai.enums.StatusProcesso;
+import org.springframework.data.jpa.domain.Specification;
 import com.systemX.senai.exception.ResourceNotFoundException;
 import com.systemX.senai.repository.HistoricoProcessoRepository;
 import com.systemX.senai.repository.ProcessoContemplacaoRepository;
-import com.systemX.senai.repository.UsuarioRepository;
 
 @Service
 public class ProcessoContemplacaoService {
     private final ProcessoContemplacaoRepository repository;
     private final HistoricoProcessoRepository historicoRepository;
-    private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoria;
     public ProcessoContemplacaoService(ProcessoContemplacaoRepository repository,
-            HistoricoProcessoRepository historicoRepository, UsuarioRepository usuarioRepository,
+            HistoricoProcessoRepository historicoRepository,
             AuditoriaService auditoria) {
         this.repository = repository;
         this.historicoRepository = historicoRepository;
-        this.usuarioRepository = usuarioRepository;
         this.auditoria = auditoria;
     }
     @Transactional
     public ProcessoResponse atualizarStatus(Long id, StatusProcessoRequest request) {
+        var usuario = auditoria.exigirOperador();
         ProcessoContemplacao processo = repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id));
-        Usuario usuario = usuarioRepository.findById(request.usuarioId()).orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado: " + request.usuarioId()));
         HistoricoProcesso historico = new HistoricoProcesso();
         historico.setProcesso(processo);
         historico.setStatusAnterior(processo.getStatus());
@@ -46,6 +45,31 @@ public class ProcessoContemplacaoService {
         processo.setStatus(request.status()); processo.setResponsavel(usuario); processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
         return toResponse(repository.save(processo));
     }
+    @Transactional(readOnly = true)
+    public PaginaResponse<ProcessoResponse> pagina(int page, int size, String q, StatusProcesso status) {
+        var pageable = Paginacao.pagina(page, size);
+        String termo = q == null ? "" : q.trim();
+        Specification<ProcessoContemplacao> busca = Paginacao.busca(termo, "idExterno", "origem");
+        Long id = numeroDoProcesso(termo);
+        var resultado = repository.findAll((root, query, cb) -> {
+            var filtro = busca.toPredicate(root, query, cb);
+            if (id != null) {
+                filtro = cb.or(filtro, cb.equal(root.get("id"), id),
+                        cb.equal(root.get("contemplacao").get("id"), id));
+            }
+            return status == null ? filtro : cb.and(filtro, cb.equal(root.get("status"), status));
+        }, pageable);
+        return PaginaResponse.from(resultado.map(this::toResponse));
+    }
+
+    private static Long numeroDoProcesso(String termo) {
+        try {
+            return Long.valueOf(termo);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     @Transactional(readOnly = true)
     public ProcessoResponse buscar(Long id) { return toResponse(repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id))); }
     private ProcessoResponse toResponse(ProcessoContemplacao p) { return new ProcessoResponse(p.getId(), p.getContemplacao().getId(), p.getResponsavel() == null ? null : p.getResponsavel().getId(), p.getStatus(), p.getCriadoEm(), p.getAtualizadoEm()); }

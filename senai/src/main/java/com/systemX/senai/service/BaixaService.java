@@ -14,31 +14,27 @@ import com.systemX.senai.enums.StatusProcesso;
 import com.systemX.senai.exception.ResourceNotFoundException;
 import com.systemX.senai.repository.BaixaRepository;
 import com.systemX.senai.repository.ProcessoContemplacaoRepository;
-import com.systemX.senai.repository.UsuarioRepository;
 
 @Service
 public class BaixaService {
     private final BaixaRepository baixaRepository;
     private final ProcessoContemplacaoRepository processoRepository;
-    private final UsuarioRepository usuarioRepository;
     private final AuditoriaService auditoria;
 
     public BaixaService(BaixaRepository baixaRepository, ProcessoContemplacaoRepository processoRepository,
-            UsuarioRepository usuarioRepository, AuditoriaService auditoria) {
+            AuditoriaService auditoria) {
         this.baixaRepository = baixaRepository;
         this.processoRepository = processoRepository;
-        this.usuarioRepository = usuarioRepository;
         this.auditoria = auditoria;
     }
 
     @Transactional
     public BaixaResponse criar(Long processoId, BaixaRequest request) {
+        var usuario = auditoria.exigirOperador();
         ProcessoContemplacao processo = processoRepository.findById(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
         Baixa existente = baixaRepository.findByProcessoId(processoId).orElse(null);
         if (existente != null) return toResponse(existente);
-        var usuario = usuarioRepository.findById(request.usuarioId())
-                .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado: " + request.usuarioId()));
         if (processo.getStatus() == StatusProcesso.CANCELADO) {
             throw new IllegalStateException("Processo cancelado não pode receber baixa");
         }
