@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -40,6 +44,11 @@ import com.systemX.senai.enums.StatusProcesso;
 import com.systemX.senai.enums.TipoContemplacao;
 import com.systemX.senai.enums.TipoUsuario;
 import com.systemX.senai.service.AuditoriaService;
+import com.systemX.senai.service.EmailService;
+import com.systemX.senai.service.PasswordResetRateLimiter;
+import com.systemX.senai.service.WhatsAppService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
 import jakarta.servlet.ServletException;
 
 import jakarta.persistence.EntityManager;
@@ -58,6 +67,11 @@ class ProcessoOperacaoIntegrationTest {
     @Autowired EntityManager em;
     @Autowired TransactionTemplate transactions;
     @MockitoSpyBean AuditoriaService auditoria;
+    @MockitoSpyBean WhatsAppService whatsapp;
+    @MockitoSpyBean EmailService emailService;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired PlatformTransactionManager transactionManager;
+    @Value("${app.jwt.secret}") String segredoTeste;
 
     @DynamicPropertySource
     static void bancoDeTeste(DynamicPropertyRegistry registry) {
@@ -481,6 +495,85 @@ class ProcessoOperacaoIntegrationTest {
             assertEquals(0L, em.createQuery("select count(u) from Usuario u where u.email = :email", Long.class)
                     .setParameter("email", emailFalha).getSingleResult());
         });
+    }
+
+    @Test
+    void tentativaAceitaOuFalhaFicaNoHistoricoSemDuplicarReenvio() throws Exception {
+        var operador = usuario(TipoUsuario.FUNCIONARIO, "notificador");
+        var processo = processo("historico-tentativa", StatusProcesso.CLIENTE_CONTATADO);
+        notificar(processo, operador);
+        var original = em.createQuery("select c from Comunicacao c where c.processo.id = :id", Comunicacao.class)
+                .setParameter("id", processo.getId()).getSingleResult();
+        original.setComunicadoOficial(true);
+        original.setAssunto("Aviso de teste");
+        original.setMensagem("Mensagem original");
+        doReturn(true).when(emailService).isEnabled();
+        doThrow(new IllegalStateException("diagnóstico interno fictício"))
+                .when(emailService).send(original.getDestinatario(), original.getAssunto(), original.getMensagem());
+        String reenvio = "/api/integracoes/processos/{id}/comunicacao/reenvio";
+        String chave = UUID.randomUUID().toString();
+        String primeira = mvc.perform(post(reenvio, processo.getId()).header("Authorization", token(operador))
+                .header("Idempotency-Key", chave)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.email.status").value("FALHA"))
+                .andExpect(jsonPath("$.email.enviadaEm").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+        String repetida = mvc.perform(post(reenvio, processo.getId()).header("Authorization", token(operador))
+                .header("Idempotency-Key", chave)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertEquals(primeira, repetida);
+        assertTrue(!primeira.contains("diagnóstico interno"));
+        verify(emailService, times(1)).send(original.getDestinatario(), original.getAssunto(), original.getMensagem());
+        assertEquals(com.systemX.senai.enums.StatusComunicacao.PENDENTE, original.getStatus());
+
+        String telefone = "5511999999999";
+        doReturn(true).when(whatsapp).isEnabled();
+        doReturn("id-ficticio-do-provedor").when(whatsapp).send(telefone, "Aviso");
+        var request = post("/api/integracoes/processos/{id}/comunicacao/whatsapp", processo.getId())
+                .header("Authorization", token(operador)).header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"telefone\":\"" + telefone + "\",\"mensagem\":\"Aviso\"}");
+        mvc.perform(request).andExpect(status().isOk()).andExpect(jsonPath("$.whatsapp.status").value("SUCESSO"))
+                .andExpect(jsonPath("$.whatsapp.enviadaEm").isNotEmpty());
+        mvc.perform(get("/api/integracoes/processos/{id}/comunicacoes/historico", processo.getId())
+                .header("Authorization", token(operador))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(3))
+                .andExpect(jsonPath("$.items[1].comunicadoOriginalId").value(original.getId()));
+        assertEquals(2L, contarEventos("HistoricoComunicacao", "comunicacao.processo.id", processo.getId()));
+        assertEquals("id-ficticio-do-provedor", em.createQuery("""
+                select c.provedorMensagemId from Comunicacao c
+                where c.processo.id = :id and c.canal = com.systemX.senai.enums.CanalComunicacao.WHATSAPP
+                """, String.class).setParameter("id", processo.getId()).getSingleResult());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void limitadorCompartilhaCotaEntreInstanciasEConcorrentes() throws Exception {
+        var primeira = new PasswordResetRateLimiter(jdbc, segredoTeste);
+        var segunda = new PasswordResetRateLimiter(jdbc, segredoTeste);
+        var tx = new TransactionTemplate(transactionManager);
+        tx.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_READ_COMMITTED);
+        var origem = "origem-teste-" + UUID.randomUUID();
+        var email = UUID.randomUUID() + "@example.test";
+        var encontro = new CyclicBarrier(2);
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            var a = pool.submit(() -> {
+                encontro.await(10, TimeUnit.SECONDS);
+                return tx.execute(status -> primeira.request(origem, email));
+            });
+            var b = pool.submit(() -> {
+                encontro.await(10, TimeUnit.SECONDS);
+                return tx.execute(status -> segunda.request(origem, email));
+            });
+            assertEquals(java.util.Set.of(PasswordResetRateLimiter.Decision.ACCEPT,
+                    PasswordResetRateLimiter.Decision.ORIGIN_LIMIT),
+                    java.util.Set.of(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS)));
+        } finally {
+            pool.shutdownNow();
+        }
+        var segundaOrigem = origem + "-2";
+        assertEquals(PasswordResetRateLimiter.Decision.EMAIL_LIMIT,
+                tx.execute(status -> segunda.request(segundaOrigem, email)));
     }
 
     private ResultActions enviarEntrada(String json) throws Exception {
