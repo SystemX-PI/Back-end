@@ -16,6 +16,10 @@ public class Comunicacao {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "comunicado_original_id")
     private Comunicacao comunicadoOriginal;
+    @Column(length = 48)
+    private String chaveOperacao;
+    private Long remetenteSolicitadoId;
+    private String provedorMensagemId;
     private String destinatario;
     private String assunto;
     @Column(length = 2000) private String mensagem;

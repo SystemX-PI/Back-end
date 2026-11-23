@@ -72,8 +72,7 @@ public class NotificationHistoryService {
         long failed = 0;
         for (var count : communications.countNotificationStatuses(accountId, from, until, channel)) {
             total += count.getTotal();
-            if (count.getStatus() == StatusComunicacao.SUCESSO
-                    || count.getStatus() == StatusComunicacao.REALIZADA) {
+            if (count.getStatus().aceito()) {
                 accepted += count.getTotal();
             } else if (count.getStatus() == StatusComunicacao.FALHA) {
                 failed += count.getTotal();
@@ -88,7 +87,10 @@ public class NotificationHistoryService {
                 total, accepted, total - accepted - failed, failed, items);
     }
 
-    private String publicError(Comunicacao communication) {
+    static String publicError(Comunicacao communication) {
+        if (communication.getStatus() == StatusComunicacao.SEM_RESPOSTA) {
+            return "O provedor não confirmou o envio. Confira o canal antes de reenviar.";
+        }
         if (communication.getStatus() == StatusComunicacao.FALHA) {
             return "Não foi possível enviar a notificação. Consulte o administrador.";
         }

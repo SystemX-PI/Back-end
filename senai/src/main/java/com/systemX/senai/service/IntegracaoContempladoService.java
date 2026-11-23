@@ -51,6 +51,7 @@ public class IntegracaoContempladoService {
     private final WhatsAppService whatsAppService;
     private final AuditoriaService auditoria;
     private final OperacaoAcesso acesso;
+    private final com.systemX.senai.repository.HistoricoComunicacaoRepository historico;
     private final PlatformService platform;
 
     public IntegracaoContempladoService(
@@ -63,7 +64,8 @@ public class IntegracaoContempladoService {
             ComunicacaoRepository comunicacaoRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
-            WhatsAppService whatsAppService, AuditoriaService auditoria, PlatformService platform, OperacaoAcesso acesso) {
+            WhatsAppService whatsAppService, AuditoriaService auditoria, PlatformService platform, OperacaoAcesso acesso,
+            com.systemX.senai.repository.HistoricoComunicacaoRepository historico) {
         this.usuarioRepository = usuarioRepository;
         this.cotaRepository = cotaRepository;
         this.assembleiaRepository = assembleiaRepository;
@@ -76,6 +78,7 @@ public class IntegracaoContempladoService {
         this.whatsAppService = whatsAppService;
         this.auditoria = auditoria;
         this.acesso = acesso;
+        this.historico = historico;
         this.platform = platform;
     }
 
@@ -142,7 +145,7 @@ public class IntegracaoContempladoService {
         comunicacao.setComunicadoOficial(true);
         comunicacao.setAssunto(assunto);
         comunicacao.setMensagem(mensagem);
-        comunicacao.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
+        comunicacao.setCriadaEm(agora());
         comunicacaoRepository.save(comunicacao);
 
         Comunicacao comunicacaoWhatsApp = null;
@@ -197,12 +200,15 @@ public class IntegracaoContempladoService {
         }));
     }
 
-    @Transactional
-    public ComunicacaoResponse reenviar(Long processoId) {
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public ComunicacaoResponse reenviar(Long processoId, java.util.UUID chave) {
         ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
         acesso.conferirProcesso(processo);
         Usuario responsavel = auditoria.exigirOperadorGlobal();
+        String operacao = chave == null ? null : "oficial:" + chave;
+        var anterior = tentativas(processoId, operacao);
+        if (!anterior.isEmpty()) return toResponse(processoId, anterior);
         Comunicacao originalEmail = comunicacaoRepository
                 .findFirstByProcessoIdAndCanalOrderByIdAsc(processoId, CanalComunicacao.EMAIL)
                 .orElseThrow(() -> new ResourceNotFoundException("Comunicado padrão não encontrado para o processo: " + processoId));
@@ -212,18 +218,23 @@ public class IntegracaoContempladoService {
                         .findFirstByProcessoIdAndCanalAndMensagemOrderByIdAsc(
                                 processoId, CanalComunicacao.WHATSAPP, originalEmail.getMensagem())
                         .orElse(null));
-        if (originalWhatsApp != null) originalWhatsApp.setComunicadoOficial(true);
-        if (originalWhatsApp != null) originalEmail.setComunicadoOficial(true);
 
-        Comunicacao email = reenviarCanal(originalEmail, responsavel);
-        Comunicacao whatsapp = originalWhatsApp == null ? null : reenviarCanal(originalWhatsApp, responsavel);
+        // Promove apenas o marcador da comunicação legada identificada, sem alterar conteúdo ou estado.
+        if (originalWhatsApp != null) {
+            originalWhatsApp.setComunicadoOficial(true);
+            originalEmail.setComunicadoOficial(true);
+        }
+
+        Comunicacao email = reenviarCanal(originalEmail, responsavel, operacao);
+        Comunicacao whatsapp = originalWhatsApp == null ? null : reenviarCanal(originalWhatsApp, responsavel, operacao);
         atualizarAposComunicacao(processo, email, whatsapp);
         return toResponse(processoId, email, whatsapp);
     }
 
-    private Comunicacao reenviarCanal(Comunicacao original, Usuario responsavel) {
+    private Comunicacao reenviarCanal(Comunicacao original, Usuario responsavel, String chave) {
         Comunicacao tentativa = new Comunicacao();
         tentativa.setComunicadoOriginal(original);
+        tentativa.setChaveOperacao(chave);
         tentativa.setProcesso(original.getProcesso());
         tentativa.setCanal(original.getCanal());
         tentativa.setStatus(StatusComunicacao.PENDENTE);
@@ -231,7 +242,7 @@ public class IntegracaoContempladoService {
         tentativa.setDestinatario(original.getDestinatario());
         tentativa.setAssunto(original.getAssunto());
         tentativa.setMensagem(original.getMensagem());
-        tentativa.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
+        tentativa.setCriadaEm(agora());
         enviar(tentativa);
         return tentativa;
     }
@@ -239,8 +250,8 @@ public class IntegracaoContempladoService {
     private void atualizarAposComunicacao(ProcessoContemplacao processo, Comunicacao email, Comunicacao whatsapp) {
         switch (processo.getStatus()) {
             case CONTEMPLADO, AGUARDANDO_COMUNICACAO, EM_COMUNICACAO -> {
-                boolean comunicado = (email != null && email.getStatus() == StatusComunicacao.SUCESSO)
-                        || (whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO);
+                boolean comunicado = (email != null && email.getStatus().aceito())
+                        || (whatsapp != null && whatsapp.getStatus().aceito());
                 processo.setStatus(comunicado ? StatusProcesso.CLIENTE_CONTATADO : StatusProcesso.AGUARDANDO_COMUNICACAO);
                 processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
                 processoRepository.save(processo);
@@ -265,17 +276,30 @@ public class IntegracaoContempladoService {
         return toResponse(processoId, email, whatsapp);
     }
 
-        @Transactional
-        public ComunicacaoResponse enviarWhatsApp(Long processoId, WhatsAppRequest request) {
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public ComunicacaoResponse enviarWhatsApp(Long processoId, WhatsAppRequest request, java.util.UUID chave) {
         ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
             .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
         acesso.conferirProcesso(processo);
         Usuario responsavel = auditoria.exigirOperadorGlobal();
+        String operacao = chave == null ? null : "manual:" + chave;
+        var anterior = tentativas(processoId, operacao);
+        if (!anterior.isEmpty()) {
+            var tentativa = anterior.get(0);
+            if (!java.util.Objects.equals(tentativa.getDestinatario(), request.telefone())
+                    || !java.util.Objects.equals(tentativa.getMensagem(), request.mensagem())
+                    || !java.util.Objects.equals(tentativa.getRemetenteSolicitadoId(), request.remetenteId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Esta chave já identifica outro envio.");
+            }
+            return toResponse(tentativa);
+        }
         String remoteName = request.remetenteId() == null ? null
             : platform.connectedInternalWhatsApp(request.remetenteId()).getRemoteName();
         Comunicacao comunicacao = criarWhatsApp(processo, responsavel, request.telefone(), request.mensagem());
+        comunicacao.setChaveOperacao(operacao);
+        comunicacao.setRemetenteSolicitadoId(request.remetenteId());
         enviar(comunicacao, remoteName);
-        if (comunicacao.getStatus() == StatusComunicacao.SUCESSO) atualizarAposComunicacao(processo, null, comunicacao);
+        if (comunicacao.getStatus().aceito()) atualizarAposComunicacao(processo, null, comunicacao);
         auditoria.registrar("Disparo manual de WhatsApp", "Processo", processoId, comunicacao.getStatus().name());
         return toResponse(comunicacao);
         }
@@ -289,7 +313,7 @@ public class IntegracaoContempladoService {
         comunicacao.setResponsavel(responsavel);
         comunicacao.setDestinatario(telefone);
         comunicacao.setMensagem(mensagem);
-        comunicacao.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
+        comunicacao.setCriadaEm(agora());
         return comunicacaoRepository.save(comunicacao);
     }
 
@@ -303,6 +327,16 @@ public class IntegracaoContempladoService {
         return usuarioRepository.save(usuario);
     }
 
+    private List<Comunicacao> tentativas(Long processoId, String chave) {
+        return chave == null ? List.of() : comunicacaoRepository.findByProcessoIdAndChaveOperacao(processoId, chave);
+    }
+
+    private ComunicacaoResponse toResponse(Long processoId, List<Comunicacao> tentativas) {
+        var email = tentativas.stream().filter(c -> c.getCanal() == CanalComunicacao.EMAIL).findFirst().orElse(null);
+        var whatsapp = tentativas.stream().filter(c -> c.getCanal() == CanalComunicacao.WHATSAPP).findFirst().orElse(null);
+        return toResponse(processoId, email, whatsapp);
+    }
+
     private void enviar(Comunicacao comunicacao) {
         enviar(comunicacao, null);
     }
@@ -310,36 +344,53 @@ public class IntegracaoContempladoService {
     private void enviar(Comunicacao comunicacao, String remoteName) {
         boolean whatsApp = comunicacao.getCanal() == CanalComunicacao.WHATSAPP;
         if (whatsApp && remoteName == null && !whatsAppService.isEnabled()) {
-            comunicacao.setErro("WhatsApp desabilitado. Configure app.whatsapp.enabled=true.");
+            comunicacao.setErro("Canal WhatsApp indisponível.");
             comunicacao.setStatus(StatusComunicacao.PENDENTE);
-            comunicacaoRepository.save(comunicacao);
+            registrarTentativa(comunicacao);
             return;
         }
         if (!whatsApp && !emailService.isEnabled()) {
-            comunicacao.setErro("E-mail desabilitado. Configure app.mail.enabled=true.");
+            comunicacao.setErro("Canal de e-mail indisponível.");
             comunicacao.setStatus(StatusComunicacao.PENDENTE);
-            comunicacaoRepository.save(comunicacao);
+            registrarTentativa(comunicacao);
             return;
         }
         try {
             if (remoteName != null) {
-                whatsAppService.sendFrom(remoteName, comunicacao.getDestinatario(), comunicacao.getMensagem());
+                comunicacao.setProvedorMensagemId(whatsAppService.sendFrom(
+                        remoteName, comunicacao.getDestinatario(), comunicacao.getMensagem()));
             } else if (whatsApp) {
-                whatsAppService.send(comunicacao.getDestinatario(), comunicacao.getMensagem());
+                comunicacao.setProvedorMensagemId(whatsAppService.send(
+                        comunicacao.getDestinatario(), comunicacao.getMensagem()));
             } else {
                 emailService.send(comunicacao.getDestinatario(), comunicacao.getAssunto(), comunicacao.getMensagem());
             }
             comunicacao.setStatus(StatusComunicacao.SUCESSO);
-            comunicacao.setEnviadaEm(LocalDateTime.now(ZoneOffset.UTC));
+            comunicacao.setEnviadaEm(agora());
             comunicacao.setErro(null);
         } catch (RuntimeException exception) {
-            comunicacao.setStatus(StatusComunicacao.FALHA);
-            if (remoteName == null) comunicacao.setErro(exception.getMessage());
-            else if (exception instanceof org.springframework.web.server.ResponseStatusException providerError)
-                comunicacao.setErro(providerError.getReason());
-            else comunicacao.setErro("Não foi possível enviar pelo WhatsApp selecionado.");
+            boolean semResposta = exception.getCause() instanceof org.springframework.web.client.ResourceAccessException
+                    || exception.getCause() instanceof java.net.SocketTimeoutException;
+            comunicacao.setStatus(semResposta ? StatusComunicacao.SEM_RESPOSTA : StatusComunicacao.FALHA);
+            comunicacao.setErro(semResposta ? "Resultado do provedor não confirmado." : "Falha na tentativa de envio.");
         }
+        registrarTentativa(comunicacao);
+    }
+
+    private static LocalDateTime agora() {
+        return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    }
+
+    private void registrarTentativa(Comunicacao comunicacao) {
         comunicacaoRepository.save(comunicacao);
+        historico.save(com.systemX.senai.entity.HistoricoComunicacao.builder()
+                .comunicacao(comunicacao)
+                .canal(comunicacao.getCanal())
+                .usuario(comunicacao.getResponsavel())
+                .status(comunicacao.getStatus())
+                .data(LocalDateTime.now(ZoneOffset.UTC))
+                .resposta(NotificationHistoryService.publicError(comunicacao))
+                .build());
     }
 
     private IntegracaoResponse response(ProcessoContemplacao processo, Comunicacao comunicacao,
@@ -358,8 +409,8 @@ public class IntegracaoContempladoService {
     }
 
     private ComunicacaoResponse toResponse(Long processoId, Comunicacao email, Comunicacao whatsapp) {
-        boolean emailSucesso = email != null && email.getStatus() == StatusComunicacao.SUCESSO;
-        boolean whatsappSucesso = whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO;
+        boolean emailSucesso = email != null && email.getStatus().aceito();
+        boolean whatsappSucesso = whatsapp != null && whatsapp.getStatus().aceito();
         String statusGeral;
         if (emailSucesso && whatsappSucesso) {
             statusGeral = "COMUNICADO_NOS_DOIS";
@@ -377,7 +428,7 @@ public class IntegracaoContempladoService {
             return null;
         }
         return new CanalComunicacaoResponse(comunicacao.getId(), comunicacao.getDestinatario(),
-                comunicacao.getStatus().name(), comunicacao.getErro(), comunicacao.getCriadaEm(),
+                comunicacao.getStatus().name(), NotificationHistoryService.publicError(comunicacao), comunicacao.getCriadaEm(),
                 comunicacao.getEnviadaEm());
     }
 }

@@ -83,7 +83,7 @@ public class AssistenteService {
             throw new ResponseStatusException(HttpStatus.GONE, "Esta proposta expirou ou não pertence à sua sessão.");
         }
         ComunicacaoResponse resposta = comunicacoes.enviarWhatsApp(proposal.processoId(),
-                new WhatsAppRequest(proposal.telefone(), proposal.mensagem()));
+                new WhatsAppRequest(proposal.telefone(), proposal.mensagem()), UUID.fromString(token));
         auditorias.save(Auditoria.builder().usuario(usuario).acao("ASSISTENTE_NOTIFICACAO_CONFIRMADA")
                 .entidade("PROCESSO_CONTEMPLACAO").registroId(proposal.processoId())
                 .detalhes("Notificação WhatsApp confirmada pelo usuário via assistente.").build());

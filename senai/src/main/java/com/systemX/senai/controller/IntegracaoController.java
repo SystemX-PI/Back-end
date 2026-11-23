@@ -108,14 +108,16 @@ public class IntegracaoController {
     }
 
     @PostMapping("/processos/{processoId}/comunicacao/reenvio")
-    public ComunicacaoResponse reenviar(@PathVariable Long processoId) {
-        return integracaoService.reenviar(processoId);
+    public ComunicacaoResponse reenviar(@PathVariable Long processoId,
+            @org.springframework.web.bind.annotation.RequestHeader(name = "Idempotency-Key", required = false) java.util.UUID chave) {
+        return integracaoService.reenviar(processoId, chave);
     }
 
     @PostMapping("/processos/{processoId}/comunicacao/whatsapp")
     public ComunicacaoResponse whatsapp(@PathVariable Long processoId,
-            @Valid @RequestBody WhatsAppRequest request) {
-        return integracaoService.enviarWhatsApp(processoId, request);
+            @Valid @RequestBody WhatsAppRequest request,
+            @org.springframework.web.bind.annotation.RequestHeader(name = "Idempotency-Key", required = false) java.util.UUID chave) {
+        return integracaoService.enviarWhatsApp(processoId, request, chave);
     }
 
     @PostMapping("/processos/{processoId}/baixa")

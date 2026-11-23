@@ -11,6 +11,7 @@ public interface ComunicacaoRepository extends JpaRepository<Comunicacao, Long> 
     Optional<Comunicacao> findFirstByProcessoIdAndCanalAndComunicadoOficialTrueOrderByIdAsc(
             Long processoId, CanalComunicacao canal);
     Optional<Comunicacao> findFirstByProcessoIdAndCanalOrderByIdAsc(Long processoId, CanalComunicacao canal);
+    java.util.List<Comunicacao> findByProcessoIdAndChaveOperacao(Long processoId, String chaveOperacao);
     Page<Comunicacao> findByProcessoId(Long processoId, Pageable pagina);
     Optional<Comunicacao> findFirstByProcessoIdAndCanalAndMensagemOrderByIdAsc(
             Long processoId, CanalComunicacao canal, String mensagem);
