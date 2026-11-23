@@ -8,6 +8,8 @@ import java.util.List;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.systemX.senai.dto.ComunicacaoResponse;
@@ -77,25 +79,35 @@ public class IntegracaoContempladoService {
         this.platform = platform;
     }
 
-    @Transactional
+    // Reentregas com a mesma cota observam o commit anterior antes de consultar a chave externa.
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public IntegracaoResponse receber(ContempladoRequest request) {
+        String email = request.email().trim().toLowerCase(java.util.Locale.ROOT);
+        var cota = cotaRepository.bloquearPorId(request.cotaId())
+                .orElseThrow(() -> new ResourceNotFoundException("Cota não encontrada."));
         var existente = processoRepository.findByOrigemAndIdExterno(request.origem(), request.idExterno());
         if (existente.isPresent()) {
-            ProcessoContemplacao processo = existente.get();
-                Comunicacao comunicacao = comunicacaoRepository
-                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.EMAIL)
-                    .orElse(null);
-                Comunicacao comunicacaoWhatsApp = comunicacaoRepository
-                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.WHATSAPP)
-                    .orElse(null);
-                return response(processo, comunicacao, comunicacaoWhatsApp, true);
+            var processo = existente.get();
+            var cliente = processo.getCliente();
+            var contemplada = processo.getContemplacao();
+            if (cliente == null || !email.equalsIgnoreCase(cliente.getEmail())
+                    || !request.cotaId().equals(contemplada.getCota().getId())
+                    || !request.assembleiaId().equals(contemplada.getAssembleia().getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Evento de integração em conflito.");
+            }
+            var comunicacao = comunicacaoRepository
+                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.EMAIL).orElse(null);
+            var whatsapp = comunicacaoRepository
+                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.WHATSAPP).orElse(null);
+            return response(processo, comunicacao, whatsapp, true);
         }
 
-        Usuario cliente = usuarioRepository.findByEmail(request.email()).orElseGet(() -> criarCliente(request));
-        var cota = cotaRepository.findById(request.cotaId())
-                .orElseThrow(() -> new ResourceNotFoundException("Cota não encontrada: " + request.cotaId()));
         Assembleia assembleia = assembleiaRepository.findById(request.assembleiaId())
-                .orElseThrow(() -> new ResourceNotFoundException("Assembleia não encontrada: " + request.assembleiaId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Assembleia não encontrada."));
+        if (!cota.getGrupo().getId().equals(assembleia.getGrupo().getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cota e assembleia devem pertencer ao mesmo grupo.");
+        }
+        Usuario cliente = usuarioRepository.findByEmail(email).orElseGet(() -> criarCliente(request));
         Usuario responsavel = usuarioRepository.findFirstByAtivoTrue()
                 .orElseThrow(() -> new ResourceNotFoundException("Nenhum usuário ativo para registrar a comunicação"));
 
@@ -284,7 +296,7 @@ public class IntegracaoContempladoService {
     private Usuario criarCliente(ContempladoRequest request) {
         Usuario usuario = new Usuario();
         usuario.setNome(request.nome());
-        usuario.setEmail(request.email());
+        usuario.setEmail(request.email().trim().toLowerCase(java.util.Locale.ROOT));
         usuario.setTelefone(request.telefone());
         usuario.setSenha(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
         usuario.setTipo(TipoUsuario.CLIENTE);

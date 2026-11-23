@@ -4,14 +4,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestAttribute;
+import com.systemX.senai.config.IntegrationKeyFilter;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,25 +37,23 @@ import java.util.List;
 public class IntegracaoController {
     private final IntegracaoContempladoService integracaoService;
     private final BaixaService baixaService;
-    private final String integrationKey;
     private final NotificationHistoryService notifications;
 
     public IntegracaoController(IntegracaoContempladoService integracaoService, BaixaService baixaService,
-            @Value("${app.integration.api-key:}") String integrationKey,
             NotificationHistoryService notifications) {
         this.integracaoService = integracaoService;
         this.baixaService = baixaService;
-        this.integrationKey = integrationKey;
         this.notifications = notifications;
     }
 
     @Operation(summary = "Receber uma contemplação do sistema parceiro",
-            description = "Autentica a integração pelo cabeçalho X-Integration-Key.")
+            description = "Autentica a integração pelo cabeçalho X-Integration-Key.",
+            parameters = @io.swagger.v3.oas.annotations.Parameter(name = "X-Integration-Key",
+                    in = io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER, required = true))
     @SecurityRequirements
     @PostMapping("/contemplacoes")
-    public ResponseEntity<IntegracaoResponse> receber(@RequestHeader("X-Integration-Key") String key,
+    public ResponseEntity<IntegracaoResponse> receber(@RequestAttribute(IntegrationKeyFilter.AUTORIZADA) boolean autorizada,
             @Valid @RequestBody ContempladoRequest request) {
-        validarChave(key);
         return ResponseEntity.status(HttpStatus.CREATED).body(integracaoService.receber(request));
     }
 
@@ -130,9 +128,4 @@ public class IntegracaoController {
         return baixaService.consultar(processoId);
     }
 
-    private void validarChave(String key) {
-        if (integrationKey.isBlank() || !integrationKey.equals(key)) {
-            throw new org.springframework.security.access.AccessDeniedException("Chave de integração inválida");
-        }
-    }
 }

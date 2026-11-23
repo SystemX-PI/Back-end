@@ -43,7 +43,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtFilter) {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtFilter,
+            @Value("${app.integration.api-key:}") String integrationKey) {
         http.csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -58,7 +59,7 @@ public class SecurityConfig {
                     .requestMatchers("/api/platform/operation-channels/**").hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
                     .requestMatchers("/api/platform/**").hasAnyRole(ROLE_ADMINISTRADOR, "CLIENTE", "USUARIO")
                     .requestMatchers("/api/portal/**").hasRole("CLIENTE")
-                    .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
+                    .requestMatchers(IntegrationKeyFilter.ENTRADA).permitAll()
                     .requestMatchers("/api/configuracoes/**", "/api/integracoes/whatsapp/**").hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
                     .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                     .requestMatchers("/api/usuarios", "/api/usuarios/**").hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
@@ -72,7 +73,8 @@ public class SecurityConfig {
                     .requestMatchers("/api/**").hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO)
                     .anyRequest().authenticated())                    .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> response.sendError(401)))
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new IntegrationKeyFilter(integrationKey), JwtAuthenticationFilter.class);
         return http.build();
     }
 }
