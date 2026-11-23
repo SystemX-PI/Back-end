@@ -8,6 +8,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
@@ -49,6 +51,8 @@ class ProcessoOperacaoIntegrationTest {
     private static final String PROCESSOS = "/api/processos-contemplacao";
     private static final String BAIXA = "/api/integracoes/processos/{id}/baixa";
 
+    private static final String ENTRADA = "/api/integracoes/contemplacoes";
+    @Value("${app.integration.api-key}") String chaveIntegracao;
     @Autowired MockMvc mvc;
     @Autowired JwtService jwt;
     @Autowired EntityManager em;
@@ -327,6 +331,179 @@ class ProcessoOperacaoIntegrationTest {
         conta.setBrandName(nome);
         em.persist(conta);
         return conta;
+    }
+
+    @Test
+    void isolamentoAplicaEscopoNasListasNosIdsENasConfiguracoes() throws Exception {
+        var casaA = conta("Isolamento A");
+        var casaB = conta("Isolamento B");
+        var operadorA = usuario(TipoUsuario.FUNCIONARIO, "escopo-op-a");
+        operadorA.setContaId(casaA.getId());
+        var operadorB = usuario(TipoUsuario.FUNCIONARIO, "escopo-op-b");
+        operadorB.setContaId(casaB.getId());
+        var clienteA = usuario(TipoUsuario.CLIENTE, "escopo-cliente-a");
+        clienteA.setContaId(casaA.getId());
+        var membro = usuario(TipoUsuario.USUARIO, "escopo-membro-a");
+        membro.setContaId(casaA.getId());
+        var clienteB = usuario(TipoUsuario.CLIENTE, "escopo-cliente-b");
+        clienteB.setContaId(casaB.getId());
+        var admin = usuario(TipoUsuario.ADMINISTRADOR, "escopo-admin");
+        var a = processo("escopo-a", StatusProcesso.EM_ANALISE);
+        a.setCliente(clienteA);
+        var b = processo("escopo-b", StatusProcesso.EM_ANALISE);
+        b.setCliente(clienteB);
+        notificar(a, operadorA);
+        notificar(b, operadorB);
+        em.flush();
+
+        mvc.perform(get(PROCESSOS + "/pagina").param("q", "escopo-").header("Authorization", token(operadorA)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(a.getId()));
+        mvc.perform(get("/api/integracoes/comunicacoes/fila/pagina").header("Authorization", token(operadorA)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+        mvc.perform(get("/api/integracoes/comunicacoes/fila/resumo").header("Authorization", token(operadorA)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1));
+        mvc.perform(get("/api/integracoes/comunicacoes/historico").param("inicio", "2026-11-23")
+                .param("fim", "2026-11-23").header("Authorization", token(operadorA)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].processId").value(a.getId()));
+        mvc.perform(get(PROCESSOS + "/{id}", b.getId()).header("Authorization", token(admin)))
+                .andExpect(status().isOk());
+        mvc.perform(get(PROCESSOS + "/{id}", b.getId()).header("Authorization", token(operadorA)))
+                .andExpect(status().isNotFound());
+        for (String recurso : new String[] {"comunicacao", "comunicacoes/historico", "baixa"}) {
+            mvc.perform(get("/api/integracoes/processos/{id}/" + recurso, b.getId())
+                    .header("Authorization", token(operadorA))).andExpect(status().isNotFound());
+        }
+        mvc.perform(get("/api/integracoes/processos/{id}/comunicacoes/historico", a.getId())
+                .header("Authorization", token(operadorA))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+        mvc.perform(post("/api/integracoes/processos/{id}/comunicacao/reenvio", b.getId())
+                .header("Authorization", token(operadorA))).andExpect(status().isNotFound());
+        mvc.perform(post("/api/integracoes/processos/{id}/comunicacao/reenvio", a.getId())
+                .header("Authorization", token(operadorA))).andExpect(status().isForbidden());
+        mvc.perform(patch(PROCESSOS + "/{id}/status", a.getId()).header("Authorization", token(operadorB))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"CANCELADO\"}"))
+                .andExpect(status().isNotFound());
+        assertEquals(StatusProcesso.EM_ANALISE, a.getStatus());
+        mvc.perform(get("/api/auditoria/pagina").header("Authorization", token(operadorA)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/auditoria/pagina").header("Authorization", token(admin))).andExpect(status().isOk());
+
+        mvc.perform(get("/api/platform/context").header("Authorization", token(membro)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.account.id").value(casaA.getId()));
+        mvc.perform(get("/api/platform/context").param("accountId", casaB.getId().toString())
+                .header("Authorization", token(membro))).andExpect(status().isNotFound());
+        var marca = "{\"name\":\"Alterada\",\"primary\":\"#315fe8\",\"accent\":\"#35cda0\"}";
+        mvc.perform(put("/api/platform/brand").header("Authorization", token(membro))
+                .contentType(MediaType.APPLICATION_JSON).content(marca)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/platform/brand").param("accountId", casaB.getId().toString())
+                .header("Authorization", token(clienteA)).contentType(MediaType.APPLICATION_JSON).content(marca))
+                .andExpect(status().isNotFound());
+        mvc.perform(put("/api/platform/brand").header("Authorization", token(clienteA))
+                .contentType(MediaType.APPLICATION_JSON).content(marca)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/portal/processos/{id}", a.getId()).header("Authorization", token(clienteA)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/portal/processos/{id}", a.getId()).header("Authorization", token(clienteB)))
+                .andExpect(status().isNotFound());
+
+        String revogado = token(operadorA);
+        operadorA.invalidarSessoes();
+        em.flush();
+        mvc.perform(get(PROCESSOS + "/{id}", a.getId()).header("Authorization", revogado))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void entradaValidaCredencialCorpoReferenciasEReentrega() throws Exception {
+        var base = processo("entrada-validacao", StatusProcesso.CONTEMPLADO).getContemplacao();
+        long cota = base.getCota().getId();
+        long assembleia = base.getAssembleia().getId();
+        var outroGrupo = processo("outro-grupo", StatusProcesso.CONTEMPLADO).getContemplacao();
+        String evento = payloadEntrada("entrada-http", "entrada-http@example.test", cota, assembleia, "500");
+        mvc.perform(post(ENTRADA).contentType(MediaType.APPLICATION_JSON).content("{"))
+                .andExpect(status().isForbidden());
+        var usuarioConta = usuario(TipoUsuario.CLIENTE, "sem-chave-parceira");
+        mvc.perform(post(ENTRADA).header("Authorization", token(usuarioConta))
+                .contentType(MediaType.APPLICATION_JSON).content(evento)).andExpect(status().isForbidden());
+        mvc.perform(post(ENTRADA).header("X-Integration-Key", "invalida")
+                .contentType(MediaType.APPLICATION_JSON).content(evento)).andExpect(status().isForbidden());
+        enviarEntrada("{").andExpect(status().isBadRequest());
+        enviarEntrada("{}").andExpect(status().isBadRequest());
+        enviarEntrada(payloadEntrada("cota-ausente", "entrada-http@example.test", Long.MAX_VALUE, assembleia, "500"))
+                .andExpect(status().isNotFound());
+        enviarEntrada(payloadEntrada("assembleia-ausente", "entrada-http@example.test", cota, Long.MAX_VALUE, "500"))
+                .andExpect(status().isNotFound());
+        enviarEntrada(payloadEntrada("grupos-divergentes", "entrada-http@example.test", cota,
+                outroGrupo.getAssembleia().getId(), "500")).andExpect(status().isBadRequest());
+
+        String primeira = enviarEntrada(evento).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Number id = com.jayway.jsonpath.JsonPath.read(primeira, "$.processoId");
+        enviarEntrada(evento).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.processoId").value(id.longValue()));
+        enviarEntrada(payloadEntrada("entrada-http", "outra-conta@example.test", cota, assembleia, "500"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.processoId").doesNotExist());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void entradaSimultaneaGravaUmaVezEErroDePersistenciaReverte() throws Exception {
+        var referencia = UUID.randomUUID().toString();
+        var ids = transactions.execute(status -> {
+            var base = processo("base-" + referencia, StatusProcesso.CONTEMPLADO).getContemplacao();
+            return new long[] {base.getCota().getId(), base.getAssembleia().getId()};
+        });
+        String email = referencia + "@example.test";
+        String evento = payloadEntrada(referencia, email, ids[0], ids[1], "500");
+        var encontro = new CyclicBarrier(2);
+        java.util.concurrent.Callable<Number> solicitar = () -> {
+            encontro.await(10, TimeUnit.SECONDS);
+            var resposta = enviarEntrada(evento).andExpect(status().isCreated()).andReturn().getResponse();
+            return com.jayway.jsonpath.JsonPath.read(resposta.getContentAsString(), "$.processoId");
+        };
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var a = executor.submit(solicitar);
+            var b = executor.submit(solicitar);
+            assertEquals(a.get(20, TimeUnit.SECONDS), b.get(20, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
+        String emailFalha = "falha-" + email;
+        enviarEntrada(payloadEntrada("falha-" + referencia, emailFalha, ids[0], ids[1], "99999999999999999999"))
+                .andExpect(status().isConflict());
+        transactions.executeWithoutResult(status -> {
+            assertEquals(1L, em.createQuery("select count(p) from ProcessoContemplacao p where p.idExterno = :id", Long.class)
+                    .setParameter("id", referencia).getSingleResult());
+            assertEquals(1L, em.createQuery("select count(c) from Comunicacao c where c.processo.idExterno = :id", Long.class)
+                    .setParameter("id", referencia).getSingleResult());
+            assertEquals(0L, em.createQuery("select count(u) from Usuario u where u.email = :email", Long.class)
+                    .setParameter("email", emailFalha).getSingleResult());
+        });
+    }
+
+    private ResultActions enviarEntrada(String json) throws Exception {
+        return mvc.perform(post(ENTRADA).header("X-Integration-Key", chaveIntegracao)
+                .contentType(MediaType.APPLICATION_JSON).content(json));
+    }
+
+    private String payloadEntrada(String externo, String email, long cota, long assembleia, String credito) {
+        return """
+                {"origem":"parceiro-teste","idExterno":"%s","nome":"Cliente fictício","email":"%s",
+                 "cotaId":%d,"assembleiaId":%d,"dataContemplacao":"2026-11-23","tipo":"SORTEIO","valorCredito":%s}
+                """.formatted(externo, email, cota, assembleia, credito);
+    }
+
+    private void notificar(ProcessoContemplacao processo, Usuario operador) {
+        var comunicacao = new Comunicacao();
+        comunicacao.setProcesso(processo);
+        comunicacao.setResponsavel(operador);
+        comunicacao.setDestinatario("notificacao@example.test");
+        comunicacao.setCanal(com.systemX.senai.enums.CanalComunicacao.EMAIL);
+        comunicacao.setStatus(com.systemX.senai.enums.StatusComunicacao.PENDENTE);
+        comunicacao.setCriadaEm(java.time.LocalDateTime.of(2026, 11, 23, 12, 0));
+        em.persist(comunicacao);
     }
 
     private void negarTransicao(Usuario operador, ProcessoContemplacao processo, StatusProcesso destino)
