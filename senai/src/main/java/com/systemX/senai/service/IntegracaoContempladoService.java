@@ -244,7 +244,8 @@ public class IntegracaoContempladoService {
 
     private void conferirDisponibilidade(Long processoId) {
         if (comunicacaoRepository.existsByProcessoIdAndEstadoDespachoIn(processoId,
-                List.of(EstadoDespacho.NA_FILA, EstadoDespacho.EM_ENVIO, EstadoDespacho.INCERTO))) {
+                List.of(EstadoDespacho.NA_FILA, EstadoDespacho.EM_ENVIO, EstadoDespacho.INCERTO,
+                        EstadoDespacho.INCERTO_EXECUCAO))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Já existe um envio em andamento ou sem confirmação neste processo. Consulte o histórico antes de repetir.");
         }

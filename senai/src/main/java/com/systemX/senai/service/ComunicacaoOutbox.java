@@ -28,6 +28,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ComunicacaoOutbox {
     private static final Logger LOG = LoggerFactory.getLogger(ComunicacaoOutbox.class);
+    private static final long MINUTOS_PARA_SINALIZAR = 15;
     private static final PageRequest LOTE = PageRequest.of(0, 20);
     private final ComunicacaoRepository comunicacoes;
     private final HistoricoComunicacaoRepository historico;
@@ -58,15 +59,17 @@ public class ComunicacaoOutbox {
                initialDelayString = "${app.notifications.outbox.initial-delay-ms:3000}")
     public void processarFila() {
         exigirForaDeTransacao();
-        var limite = agora().minusMinutes(15);
+        var limite = agora().minusMinutes(MINUTOS_PARA_SINALIZAR);
         for (Long id : comunicacoes.idsExpirados(EstadoDespacho.EM_ENVIO, limite, LOTE)) {
             try {
-                marcarIncerto(id, limite);
+                sinalizarExpiracao(id, limite);
             } catch (RuntimeException ex) {
                 LOG.error("Não foi possível sinalizar a tentativa de comunicação expirada {}.", id);
             }
         }
-        for (Long id : comunicacoes.idsPorEstado(EstadoDespacho.NA_FILA, LOTE)) {
+        for (Long id : comunicacoes.idsDespachaveis(EstadoDespacho.NA_FILA,
+                CanalComunicacao.EMAIL, email.isEnabled(), CanalComunicacao.WHATSAPP,
+                whatsapp.isEnabled(), whatsapp.isConfigured(), LOTE)) {
             try {
                 processar(id);
             } catch (RuntimeException ex) {
@@ -82,14 +85,18 @@ public class ComunicacaoOutbox {
         if (envio == null) return;
         Resultado resultado = enviar(envio);
         try {
-            transacao.executeWithoutResult(tx -> comunicacoes.bloquearTentativa(id)
-                    .filter(c -> c.getEstadoDespacho() == EstadoDespacho.EM_ENVIO)
-                    .ifPresent(c -> registrarResultado(c, resultado, null)));
+            finalizarExecucao(id, resultado);
         } catch (RuntimeException ex) {
-            // Não repetimos o efeito externo. Se o banco estiver indisponível, a varredura trata a reserva expirada.
             LOG.error("Tentativa de comunicação {} sem confirmação local. Requer reconciliação.", id);
-            marcarIncerto(id, null);
+            finalizarExecucao(id, incerto());
         }
+    }
+
+    private void finalizarExecucao(Long id, Resultado resultado) {
+        transacao.executeWithoutResult(tx -> comunicacoes.bloquearTentativa(id)
+                .filter(c -> c.getEstadoDespacho() == EstadoDespacho.EM_ENVIO
+                        || c.getEstadoDespacho() == EstadoDespacho.INCERTO_EXECUCAO)
+                .ifPresent(c -> registrarResultado(c, resultado, null)));
     }
 
     private Envio reservar(Long id) {
@@ -103,19 +110,19 @@ public class ComunicacaoOutbox {
                     "Processo cancelado antes do despacho."), null);
             return null;
         }
+        if (!canalDisponivel(tentativa)) return null;
         tentativa.setEstadoDespacho(EstadoDespacho.EM_ENVIO);
         tentativa.setDespachoIniciadoEm(agora());
         return new Envio(tentativa.getCanal(), tentativa.getDestinatario(), tentativa.getAssunto(),
                 tentativa.getMensagem(), tentativa.getInstanciaDespacho());
     }
 
+    private boolean canalDisponivel(Comunicacao tentativa) {
+        if (tentativa.getCanal() == CanalComunicacao.EMAIL) return email.isEnabled();
+        return tentativa.getInstanciaDespacho() == null ? whatsapp.isEnabled() : whatsapp.isConfigured();
+    }
+
     private Resultado enviar(Envio envio) {
-        if (envio.canal() == CanalComunicacao.EMAIL && !email.isEnabled()) {
-            return concluido(StatusComunicacao.PENDENTE, null, "Canal de e-mail indisponível.");
-        }
-        if (envio.canal() == CanalComunicacao.WHATSAPP && envio.instancia() == null && !whatsapp.isEnabled()) {
-            return concluido(StatusComunicacao.PENDENTE, null, "Canal WhatsApp indisponível.");
-        }
         try {
             if (envio.canal() == CanalComunicacao.EMAIL) {
                 email.send(envio.destinatario(), envio.assunto(), envio.mensagem());
@@ -134,11 +141,13 @@ public class ComunicacaoOutbox {
         }
     }
 
-    private void marcarIncerto(Long id, LocalDateTime limite) {
+    private void sinalizarExpiracao(Long id, LocalDateTime limite) {
         transacao.executeWithoutResult(tx -> comunicacoes.bloquearTentativa(id)
                 .filter(c -> c.getEstadoDespacho() == EstadoDespacho.EM_ENVIO)
-                .filter(c -> limite == null || !c.getDespachoIniciadoEm().isAfter(limite))
-                .ifPresent(c -> registrarResultado(c, incerto(), null)));
+                .filter(c -> !c.getDespachoIniciadoEm().isAfter(limite))
+                .ifPresent(c -> registrarResultado(c, new Resultado(StatusComunicacao.SEM_RESPOSTA,
+                        EstadoDespacho.INCERTO_EXECUCAO, null, "Prazo de acompanhamento excedido. "
+                                + "O encerramento da execução ainda não foi confirmado."), null)));
     }
 
     @Transactional
@@ -151,13 +160,19 @@ public class ComunicacaoOutbox {
         var tentativa = comunicacoes.bloquearTentativa(tentativaId)
                 .filter(c -> c.getProcesso().getId().equals(processoId))
                 .orElseThrow(() -> new ResourceNotFoundException("Tentativa não encontrada."));
+        if (tentativa.getEstadoDespacho() == EstadoDespacho.INCERTO_EXECUCAO) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "O encerramento da execução original ainda não foi confirmado.");
+        }
         if (tentativa.getEstadoDespacho() != EstadoDespacho.INCERTO) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A tentativa não está aguardando reconciliação.");
         }
-        var status = request.resultado() == ReconciliarComunicacaoRequest.Resultado.ACEITO_PROVEDOR
-                ? StatusComunicacao.SUCESSO : StatusComunicacao.FALHA;
-        registrarResultado(tentativa, concluido(status, null,
-                status.aceito() ? null : "Operação confirmou que o envio não ocorreu."), request.evidencia().trim(), operador);
+        if (request.resultado() != ReconciliarComunicacaoRequest.Resultado.ACEITO_PROVEDOR) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "O provedor ainda pode concluir o envio. Só é possível registrar um aceite verificado.");
+        }
+        registrarResultado(tentativa, concluido(StatusComunicacao.SUCESSO, null, null),
+                request.evidencia().trim(), operador);
         auditoria.registrar("Reconciliação de comunicação", "Processo", processoId,
                 "Tentativa #" + tentativaId + " reconciliada como " + request.resultado() + ".");
     }

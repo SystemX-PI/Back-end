@@ -32,7 +32,11 @@ public class WhatsAppService {
     public String defaultInstance() { return instance; }
 
     public boolean isEnabled() {
-        return enabled;
+        return enabled && isConfigured() && !instance.isBlank();
+    }
+
+    public boolean isConfigured() {
+        return !apiKey.isBlank();
     }
 
     public String send(String recipient, String text) {

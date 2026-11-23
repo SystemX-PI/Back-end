@@ -23,8 +23,18 @@ public interface ComunicacaoRepository extends JpaRepository<Comunicacao, Long> 
 
     boolean existsByProcessoIdAndEstadoDespachoIn(Long processoId, Collection<EstadoDespacho> estados);
 
-    @Query("select c.id from Comunicacao c where c.estadoDespacho = :estado order by c.id")
-    List<Long> idsPorEstado(@Param("estado") EstadoDespacho estado, Pageable page);
+    @Query("""
+            select c.id from Comunicacao c where c.estadoDespacho = :estado and (
+                (c.canal = :email and :emailHabilitado = true)
+                or (c.canal = :whatsapp and (
+                    (c.instanciaDespacho is null and :whatsappPadrao = true)
+                    or (c.instanciaDespacho is not null and :whatsappConfigurado = true))))
+            order by c.id
+            """)
+    List<Long> idsDespachaveis(@Param("estado") EstadoDespacho estado,
+            @Param("email") CanalComunicacao email, @Param("emailHabilitado") boolean emailHabilitado,
+            @Param("whatsapp") CanalComunicacao whatsapp, @Param("whatsappPadrao") boolean whatsappPadrao,
+            @Param("whatsappConfigurado") boolean whatsappConfigurado, Pageable page);
 
     @Query("""
             select c.id from Comunicacao c

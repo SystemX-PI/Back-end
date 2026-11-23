@@ -93,8 +93,11 @@ public class NotificationHistoryService {
     }
 
     static String publicError(Comunicacao communication) {
+        if (communication.getEstadoDespacho() == com.systemX.senai.enums.EstadoDespacho.INCERTO_EXECUCAO) {
+            return "O encerramento do envio ainda não foi confirmado. A tentativa permanece bloqueada.";
+        }
         if (communication.getStatus() == StatusComunicacao.SEM_RESPOSTA) {
-            return "O provedor não confirmou o envio. Confira o canal antes de reenviar.";
+            return "O provedor não confirmou o envio. A tentativa permanece bloqueada até que o aceite seja verificado.";
         }
         if (communication.getStatus() == StatusComunicacao.FALHA) {
             return "Não foi possível enviar a notificação. Consulte o administrador.";
