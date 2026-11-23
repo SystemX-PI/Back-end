@@ -71,8 +71,10 @@ public class SecurityConfig {
                     .requestMatchers("/api/consorcios/**", "/api/cotas/**", "/api/grupos/**", "/api/tipos-consorcio/**")
                         .hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
                     .requestMatchers("/api/**").hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO)
-                    .anyRequest().authenticated())                    .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint((request, response, exception) -> response.sendError(401)))
+                    .anyRequest().authenticated())
+                .exceptionHandling(exceptions -> exceptions
+                    .authenticationEntryPoint((request, response, exception) -> response.setStatus(401))
+                    .accessDeniedHandler((request, response, exception) -> response.setStatus(403)))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new IntegrationKeyFilter(integrationKey), JwtAuthenticationFilter.class);
         return http.build();
