@@ -101,6 +101,77 @@ class ProcessoOperacaoIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void baixaEmFaseInelegivelRetornaConflitoSemGravar() throws Exception {
+        var operador = usuario(TipoUsuario.FUNCIONARIO, "baixa-inelegivel");
+        for (var fase : new StatusProcesso[] { StatusProcesso.EM_ANALISE, StatusProcesso.CANCELADO,
+                StatusProcesso.FINALIZADO }) {
+            var processo = processo("baixa-" + fase, fase);
+            mvc.perform(post(BAIXA, processo.getId()).header("Authorization", token(operador))
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"observacao\":\"Conferido\"}"))
+                    .andExpect(status().isConflict());
+            mvc.perform(get(BAIXA, processo.getId()).header("Authorization", token(operador)))
+                    .andExpect(status().isNotFound());
+            assertEquals(fase, processo.getStatus());
+        }
+    }
+
+    @Test
+    void segundaBaixaRetornaOComprovanteOriginal() throws Exception {
+        var primeiro = usuario(TipoUsuario.FUNCIONARIO, "primeira-baixa");
+        var segundo = usuario(TipoUsuario.ADMINISTRADOR, "segunda-baixa");
+        var processo = processo("baixa-repetida", StatusProcesso.EM_PROCESSO_DE_BAIXA);
+        var original = mvc.perform(post(BAIXA, processo.getId()).header("Authorization", token(primeiro))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"observacao\":\"Original\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.usuarioId").value(primeiro.getId()))
+                .andReturn().getResponse().getContentAsString();
+        var repetida = mvc.perform(post(BAIXA, processo.getId()).header("Authorization", token(segundo))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"observacao\":\"Segunda tentativa\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals(original, repetida);
+        assertEquals(StatusProcesso.FINALIZADO, processo.getStatus());
+        conferirAuditoria(processo, primeiro, "Baixa concluída");
+    }
+
+    @Test
+    void transicaoRejeitaSaltosRegressaoFinalizacaoDiretaEReabertura() throws Exception {
+        var operador = usuario(TipoUsuario.FUNCIONARIO, "transicao");
+        var emAnalise = processo("em-analise", StatusProcesso.EM_ANALISE);
+        mvc.perform(get(PROCESSOS + "/{id}", emAnalise.getId()).header("Authorization", token(operador)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transicoesPermitidas[0]").value("EM_PROCESSO_DE_BAIXA"))
+                .andExpect(jsonPath("$.transicoesPermitidas[1]").value("CANCELADO"));
+        negarTransicao(operador, emAnalise, StatusProcesso.DOCUMENTOS_RECEBIDOS);
+        negarTransicao(operador, emAnalise, StatusProcesso.FINALIZADO);
+        negarTransicao(operador, processo("salto", StatusProcesso.CONTEMPLADO), StatusProcesso.EM_ANALISE);
+        negarTransicao(operador, processo("encerrado", StatusProcesso.FINALIZADO), StatusProcesso.EM_ANALISE);
+
+        mvc.perform(patch(PROCESSOS + "/{id}/status", emAnalise.getId())
+                .header("Authorization", token(operador)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"CANCELADO\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.transicoesPermitidas").isEmpty());
+        negarTransicao(operador, emAnalise, StatusProcesso.EM_PROCESSO_DE_BAIXA);
+    }
+
+    private void negarTransicao(Usuario operador, ProcessoContemplacao processo, StatusProcesso destino)
+            throws Exception {
+        var origem = processo.getStatus();
+        long historicoAnterior = contarEventos("HistoricoProcesso", "processo.id", processo.getId());
+        long auditoriaAnterior = contarEventos("Auditoria", "registroId", processo.getId());
+        mvc.perform(patch(PROCESSOS + "/{id}/status", processo.getId())
+                .header("Authorization", token(operador)).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"%s\"}".formatted(destino)))
+                .andExpect(status().isConflict());
+        assertEquals(origem, processo.getStatus());
+        assertEquals(historicoAnterior, contarEventos("HistoricoProcesso", "processo.id", processo.getId()));
+        assertEquals(auditoriaAnterior, contarEventos("Auditoria", "registroId", processo.getId()));
+    }
+
+    private long contarEventos(String entidade, String campo, Long id) {
+        return em.createQuery("select count(e) from " + entidade + " e where e." + campo + " = :id", Long.class)
+                .setParameter("id", id).getSingleResult();
+    }
+
     private void conferirAuditoria(ProcessoContemplacao processo, Usuario operador, String acao) {
         var registro = em.createQuery("""
                 select a from Auditoria a where a.registroId = :id and a.acao = :acao
