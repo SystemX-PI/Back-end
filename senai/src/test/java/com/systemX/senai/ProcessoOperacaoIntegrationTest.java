@@ -63,6 +63,7 @@ class ProcessoOperacaoIntegrationTest {
     private static final String ENTRADA = "/api/integracoes/contemplacoes";
     @Value("${app.integration.api-key}") String chaveIntegracao;
     @Autowired MockMvc mvc;
+    @Autowired com.systemX.senai.service.ComunicacaoOutbox outbox;
     @Autowired JwtService jwt;
     @Autowired EntityManager em;
     @Autowired TransactionTemplate transactions;
@@ -498,51 +499,203 @@ class ProcessoOperacaoIntegrationTest {
     }
 
     @Test
-    void tentativaAceitaOuFalhaFicaNoHistoricoSemDuplicarReenvio() throws Exception {
-        var operador = usuario(TipoUsuario.FUNCIONARIO, "notificador");
-        var processo = processo("historico-tentativa", StatusProcesso.CLIENTE_CONTATADO);
-        notificar(processo, operador);
-        var original = em.createQuery("select c from Comunicacao c where c.processo.id = :id", Comunicacao.class)
-                .setParameter("id", processo.getId()).getSingleResult();
-        original.setComunicadoOficial(true);
-        original.setAssunto("Aviso de teste");
-        original.setMensagem("Mensagem original");
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void aceiteDoProvedorNaoConfirmaContatoEReenvioPreservaOriginal() throws Exception {
+        var fixture = criarFixture("outbox-normal");
+        Long originalId = transactions.execute(tx -> {
+            var processo = em.find(ProcessoContemplacao.class, fixture.id());
+            processo.setStatus(StatusProcesso.EM_COMUNICACAO);
+            var operador = em.createQuery("select u from Usuario u where u.tipo = :tipo order by u.id desc", Usuario.class)
+                    .setParameter("tipo", TipoUsuario.FUNCIONARIO).setMaxResults(1).getSingleResult();
+            var original = new Comunicacao();
+            original.setProcesso(processo);
+            original.setResponsavel(operador);
+            original.setCanal(com.systemX.senai.enums.CanalComunicacao.EMAIL);
+            original.setStatus(com.systemX.senai.enums.StatusComunicacao.PENDENTE);
+            original.setComunicadoOficial(true);
+            original.setDestinatario("notificacao@example.test");
+            original.setAssunto("Aviso de teste");
+            original.setMensagem("Mensagem original");
+            original.setCriadaEm(java.time.LocalDateTime.now());
+            em.persist(original);
+            return original.getId();
+        });
+
         doReturn(true).when(emailService).isEnabled();
         doThrow(new IllegalStateException("diagnóstico interno fictício"))
-                .when(emailService).send(original.getDestinatario(), original.getAssunto(), original.getMensagem());
+                .when(emailService).send("notificacao@example.test", "Aviso de teste", "Mensagem original");
         String reenvio = "/api/integracoes/processos/{id}/comunicacao/reenvio";
         String chave = UUID.randomUUID().toString();
-        String primeira = mvc.perform(post(reenvio, processo.getId()).header("Authorization", token(operador))
+        var resp = mvc.perform(post(reenvio, fixture.id()).header("Authorization", fixture.primeiroToken())
                 .header("Idempotency-Key", chave)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.email.status").value("FALHA"))
-                .andExpect(jsonPath("$.email.enviadaEm").isEmpty())
+                .andExpect(jsonPath("$.email.estadoDespacho").value("NA_FILA"))
                 .andReturn().getResponse().getContentAsString();
-        String repetida = mvc.perform(post(reenvio, processo.getId()).header("Authorization", token(operador))
+        Long tentativa = ((Number) com.jayway.jsonpath.JsonPath.read(resp, "$.email.id")).longValue();
+        outbox.processar(tentativa);
+        mvc.perform(post(reenvio, fixture.id()).header("Authorization", fixture.primeiroToken())
                 .header("Idempotency-Key", chave)).andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        assertEquals(primeira, repetida);
-        assertTrue(!primeira.contains("diagnóstico interno"));
-        verify(emailService, times(1)).send(original.getDestinatario(), original.getAssunto(), original.getMensagem());
-        assertEquals(com.systemX.senai.enums.StatusComunicacao.PENDENTE, original.getStatus());
+                .andExpect(jsonPath("$.email.id").value(tentativa))
+                .andExpect(jsonPath("$.email.estadoDespacho").value("INCERTO"))
+                .andExpect(jsonPath("$.email.status").value("SEM_RESPOSTA"))
+                .andExpect(jsonPath("$.email.enviadaEm").isEmpty());
+        outbox.processar(tentativa);
+        verify(emailService, times(1)).send("notificacao@example.test", "Aviso de teste", "Mensagem original");
+        mvc.perform(get("/api/integracoes/processos/{id}/comunicacoes/historico", fixture.id())
+                .header("Authorization", fixture.primeiroToken())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.items[0].comunicadoOriginalId").value(originalId));
+        transactions.executeWithoutResult(tx -> assertEquals(com.systemX.senai.enums.StatusComunicacao.PENDENTE,
+                em.find(Comunicacao.class, originalId).getStatus()));
 
-        String telefone = "5511999999999";
+        reconciliar(fixture.id(), tentativa, fixture.primeiroToken(), "NAO_ENVIADO")
+                .andExpect(status().isNoContent());
         doReturn(true).when(whatsapp).isEnabled();
-        doReturn("id-ficticio-do-provedor").when(whatsapp).send(telefone, "Aviso");
-        var request = post("/api/integracoes/processos/{id}/comunicacao/whatsapp", processo.getId())
-                .header("Authorization", token(operador)).header("Idempotency-Key", UUID.randomUUID().toString())
+        doAnswer(invocation -> {
+            assertTrue(!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive());
+            return "id-ficticio-do-provedor";
+        }).when(whatsapp).send("5511999999999", "Aviso");
+        long aceito = enfileirarWhatsApp(fixture, UUID.randomUUID().toString());
+        outbox.processar(aceito);
+        mvc.perform(get(PROCESSOS + "/{id}", fixture.id()).header("Authorization", fixture.primeiroToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("EM_COMUNICACAO"));
+        mudarContato(fixture, "").andExpect(status().isBadRequest());
+        mudarContato(fixture, "Cliente confirmou o recebimento por telefone.")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CLIENTE_CONTATADO"));
+        transactions.executeWithoutResult(tx -> {
+            var registro = em.find(Comunicacao.class, aceito);
+            assertEquals("id-ficticio-do-provedor", registro.getProvedorMensagemId());
+            assertEquals(com.systemX.senai.enums.StatusComunicacao.SUCESSO, registro.getStatus());
+            assertEquals(3L, contarEventos("HistoricoComunicacao", "comunicacao.processo.id", fixture.id()));
+        });
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void falhaAoPersistirAposAceiteBloqueiaReenvioEExigeReconciliacaoAutorizada() throws Exception {
+        var fixture = criarFixture("outbox-incerto");
+        String chave = UUID.randomUUID().toString();
+        long tentativa = enfileirarWhatsApp(fixture, chave);
+        doReturn(true).when(whatsapp).isEnabled();
+        // O simulador aceita, mas o ID oversized faz a gravação local falhar e reverter.
+        doReturn("x".repeat(256)).when(whatsapp).send("5511999999999", "Aviso");
+        outbox.processar(tentativa);
+        outbox.processar(tentativa);
+        assertEquals(tentativa, idWhatsApp(tentarWhatsApp(fixture, chave).andExpect(status().isOk())
+                .andExpect(jsonPath("$.whatsapp.estadoDespacho").value("INCERTO"))
+                .andExpect(jsonPath("$.whatsapp.status").value("SEM_RESPOSTA"))));
+        tentarWhatsApp(fixture, UUID.randomUUID().toString()).andExpect(status().isConflict());
+        verify(whatsapp, times(1)).send("5511999999999", "Aviso");
+        transactions.executeWithoutResult(tx -> {
+            assertNull(em.find(Comunicacao.class, tentativa).getProvedorMensagemId());
+            assertEquals(1L, contarEventos("HistoricoComunicacao", "comunicacao.processo.id", fixture.id()));
+        });
+        String externo = transactions.execute(tx -> {
+            var usuario = usuario(TipoUsuario.FUNCIONARIO, "outbox-externo-" + UUID.randomUUID());
+            usuario.setContaId(conta("Conta externa").getId());
+            return token(usuario);
+        });
+        reconciliar(fixture.id(), tentativa, externo, "ACEITO_PROVEDOR").andExpect(status().isNotFound());
+        mvc.perform(get("/api/integracoes/processos/{id}/comunicacoes/historico", fixture.id())
+                .header("Authorization", externo)).andExpect(status().isNotFound());
+        var outro = criarFixture("outbox-outro");
+        reconciliar(outro.id(), tentativa, fixture.primeiroToken(), "ACEITO_PROVEDOR").andExpect(status().isNotFound());
+        reconciliar(fixture.id(), tentativa, fixture.primeiroToken(), "ACEITO_PROVEDOR").andExpect(status().isNoContent());
+        reconciliar(fixture.id(), tentativa, fixture.primeiroToken(), "ACEITO_PROVEDOR").andExpect(status().isConflict());
+        assertEquals(tentativa, idWhatsApp(tentarWhatsApp(fixture, chave).andExpect(status().isOk())
+                .andExpect(jsonPath("$.whatsapp.status").value("SUCESSO"))));
+        transactions.executeWithoutResult(tx -> {
+            assertEquals(1L, contarEventos("Comunicacao", "processo.id", fixture.id()));
+            assertEquals(2L, contarEventos("HistoricoComunicacao", "comunicacao.processo.id", fixture.id()));
+        });
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void rollbackDoEnfileiramentoNaoDespachaEReservaConcorrenteEnviaUmaVez() throws Exception {
+        var fixture = criarFixture("outbox-rollback");
+        Long revertida = transactions.execute(tx -> {
+            try {
+                long id = enfileirarWhatsApp(fixture, UUID.randomUUID().toString());
+                tx.setRollbackOnly();
+                return id;
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex);
+            }
+        });
+        outbox.processar(revertida);
+        verify(whatsapp, times(0)).send("5511999999999", "Aviso");
+        long id = enfileirarWhatsApp(fixture, UUID.randomUUID().toString());
+        doReturn(true).when(whatsapp).isEnabled();
+        var aceitando = new java.util.concurrent.CountDownLatch(1);
+        var liberar = new java.util.concurrent.CountDownLatch(1);
+        doAnswer(invocation -> {
+            aceitando.countDown();
+            assertTrue(liberar.await(10, TimeUnit.SECONDS));
+            return "id-ficticio";
+        }).when(whatsapp).send("5511999999999", "Aviso");
+        var pool = Executors.newSingleThreadExecutor();
+        try {
+            var envio = pool.submit(() -> outbox.processar(id));
+            assertTrue(aceitando.await(10, TimeUnit.SECONDS));
+            outbox.processar(id);
+            liberar.countDown();
+            envio.get(10, TimeUnit.SECONDS);
+        } finally {
+            liberar.countDown();
+            pool.shutdownNow();
+        }
+        verify(whatsapp, times(1)).send("5511999999999", "Aviso");
+        transactions.executeWithoutResult(tx -> assertEquals(1L,
+                contarEventos("HistoricoComunicacao", "comunicacao.processo.id", fixture.id())));
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void reservaExpiradaFicaIncertaSemNovoEnvio() throws Exception {
+        var fixture = criarFixture("outbox-reserva-expirada");
+        var chave = UUID.randomUUID().toString();
+        var tentativa = enfileirarWhatsApp(fixture, chave);
+        transactions.executeWithoutResult(tx -> {
+            var registro = em.find(Comunicacao.class, tentativa);
+            registro.setEstadoDespacho(com.systemX.senai.enums.EstadoDespacho.EM_ENVIO);
+            registro.setDespachoIniciadoEm(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(16));
+        });
+        outbox.processarFila();
+        outbox.processar(tentativa);
+        assertEquals(tentativa, idWhatsApp(tentarWhatsApp(fixture, chave).andExpect(status().isOk())
+                .andExpect(jsonPath("$.whatsapp.estadoDespacho").value("INCERTO"))));
+        verify(whatsapp, times(0)).send("5511999999999", "Aviso");
+        reconciliar(fixture.id(), tentativa, fixture.primeiroToken(), "NAO_ENVIADO")
+                .andExpect(status().isNoContent());
+    }
+
+    private long enfileirarWhatsApp(Fixture fixture, String chave) throws Exception {
+        return idWhatsApp(tentarWhatsApp(fixture, chave).andExpect(status().isOk())
+                .andExpect(jsonPath("$.whatsapp.estadoDespacho").value("NA_FILA")));
+    }
+
+    private long idWhatsApp(ResultActions resultado) throws Exception {
+        Number id = com.jayway.jsonpath.JsonPath.read(resultado.andReturn().getResponse().getContentAsString(), "$.whatsapp.id");
+        return id.longValue();
+    }
+
+    private ResultActions tentarWhatsApp(Fixture fixture, String chave) throws Exception {
+        return mvc.perform(post("/api/integracoes/processos/{id}/comunicacao/whatsapp", fixture.id())
+                .header("Authorization", fixture.primeiroToken()).header("Idempotency-Key", chave)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"telefone\":\"" + telefone + "\",\"mensagem\":\"Aviso\"}");
-        mvc.perform(request).andExpect(status().isOk()).andExpect(jsonPath("$.whatsapp.status").value("SUCESSO"))
-                .andExpect(jsonPath("$.whatsapp.enviadaEm").isNotEmpty());
-        mvc.perform(get("/api/integracoes/processos/{id}/comunicacoes/historico", processo.getId())
-                .header("Authorization", token(operador))).andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(3))
-                .andExpect(jsonPath("$.items[1].comunicadoOriginalId").value(original.getId()));
-        assertEquals(2L, contarEventos("HistoricoComunicacao", "comunicacao.processo.id", processo.getId()));
-        assertEquals("id-ficticio-do-provedor", em.createQuery("""
-                select c.provedorMensagemId from Comunicacao c
-                where c.processo.id = :id and c.canal = com.systemX.senai.enums.CanalComunicacao.WHATSAPP
-                """, String.class).setParameter("id", processo.getId()).getSingleResult());
+                .content("{\"telefone\":\"5511999999999\",\"mensagem\":\"Aviso\"}"));
+    }
+
+    private ResultActions reconciliar(Long processo, Long tentativa, String token, String resultado) throws Exception {
+        return mvc.perform(post("/api/integracoes/processos/{id}/comunicacoes/{tentativa}/reconciliacao", processo, tentativa)
+                .header("Authorization", token).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"resultado\":\"%s\",\"evidencia\":\"Conferência no painel de teste\"}".formatted(resultado)));
+    }
+
+    private ResultActions mudarContato(Fixture fixture, String evidencia) throws Exception {
+        return mvc.perform(patch(PROCESSOS + "/{id}/status", fixture.id())
+                .header("Authorization", fixture.primeiroToken()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"CLIENTE_CONTATADO\",\"observacao\":\"%s\"}".formatted(evidencia)));
     }
 
     @Test
