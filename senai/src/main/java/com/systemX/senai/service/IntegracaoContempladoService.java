@@ -48,6 +48,7 @@ public class IntegracaoContempladoService {
     private final EmailService emailService;
     private final WhatsAppService whatsAppService;
     private final AuditoriaService auditoria;
+    private final OperacaoAcesso acesso;
     private final PlatformService platform;
 
     public IntegracaoContempladoService(
@@ -60,7 +61,7 @@ public class IntegracaoContempladoService {
             ComunicacaoRepository comunicacaoRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
-            WhatsAppService whatsAppService, AuditoriaService auditoria, PlatformService platform) {
+            WhatsAppService whatsAppService, AuditoriaService auditoria, PlatformService platform, OperacaoAcesso acesso) {
         this.usuarioRepository = usuarioRepository;
         this.cotaRepository = cotaRepository;
         this.assembleiaRepository = assembleiaRepository;
@@ -72,6 +73,7 @@ public class IntegracaoContempladoService {
         this.emailService = emailService;
         this.whatsAppService = whatsAppService;
         this.auditoria = auditoria;
+        this.acesso = acesso;
         this.platform = platform;
     }
 
@@ -162,14 +164,15 @@ public class IntegracaoContempladoService {
 
     @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public ResumoFila resumoFila() {
-        long total = processoRepository.count(FilaFiltro.criar("", ""));
-        long pendentes = processoRepository.count(FilaFiltro.criar("", "PENDENTE"));
-        long comFalha = processoRepository.count(FilaFiltro.criar("", "FALHA"));
+        var escopo = acesso.processosVisiveis();
+        long total = processoRepository.count(escopo.and(FilaFiltro.criar("", "")));
+        long pendentes = processoRepository.count(escopo.and(FilaFiltro.criar("", "PENDENTE")));
+        long comFalha = processoRepository.count(escopo.and(FilaFiltro.criar("", "FALHA")));
         return new ResumoFila(total, pendentes, total - pendentes, comFalha);
     }
 
     private com.systemX.senai.dto.PaginaResponse<FilaComunicacaoResponse> listarFilaInterna(int page, int size, String q, String status) {
-        var processos = processoRepository.findAll(FilaFiltro.criar(q, status), Paginacao.pagina(page, size));
+        var processos = processoRepository.findAll(acesso.processosVisiveis().and(FilaFiltro.criar(q, status)), Paginacao.pagina(page, size));
         var ids = processos.getContent().stream().map(ProcessoContemplacao::getId).toList();
         var canais = ids.isEmpty() ? List.<Comunicacao>of() : comunicacaoRepository.buscarUltimasEmLote(ids);
         var porProcesso = canais.stream().collect(java.util.stream.Collectors.groupingBy(c -> c.getProcesso().getId()));
@@ -184,8 +187,10 @@ public class IntegracaoContempladoService {
 
     @Transactional
     public ComunicacaoResponse reenviar(Long processoId) {
-        ProcessoContemplacao processo = processoRepository.findById(processoId)
+        ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        acesso.conferirProcesso(processo);
+        Usuario responsavel = auditoria.exigirOperadorGlobal();
         Comunicacao originalEmail = comunicacaoRepository
                 .findFirstByProcessoIdAndCanalOrderByIdAsc(processoId, CanalComunicacao.EMAIL)
                 .orElseThrow(() -> new ResourceNotFoundException("Comunicado padrão não encontrado para o processo: " + processoId));
@@ -197,8 +202,6 @@ public class IntegracaoContempladoService {
                         .orElse(null));
         if (originalWhatsApp != null) originalWhatsApp.setComunicadoOficial(true);
         if (originalWhatsApp != null) originalEmail.setComunicadoOficial(true);
-        Usuario responsavel = auditoria.responsavel();
-        if (responsavel == null) responsavel = processo.getResponsavel();
 
         Comunicacao email = reenviarCanal(originalEmail, responsavel);
         Comunicacao whatsapp = originalWhatsApp == null ? null : reenviarCanal(originalWhatsApp, responsavel);
@@ -236,6 +239,8 @@ public class IntegracaoContempladoService {
 
     @Transactional(readOnly = true)
     public ComunicacaoResponse consultar(Long processoId) {
+        acesso.conferirProcesso(processoRepository.findById(processoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId)));
         Comunicacao email = comunicacaoRepository
             .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.EMAIL)
             .orElse(null);
@@ -250,13 +255,12 @@ public class IntegracaoContempladoService {
 
         @Transactional
         public ComunicacaoResponse enviarWhatsApp(Long processoId, WhatsAppRequest request) {
-        ProcessoContemplacao processo = processoRepository.findById(processoId)
+        ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
             .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        acesso.conferirProcesso(processo);
+        Usuario responsavel = auditoria.exigirOperadorGlobal();
         String remoteName = request.remetenteId() == null ? null
             : platform.connectedInternalWhatsApp(request.remetenteId()).getRemoteName();
-        Usuario responsavel = auditoria.responsavel();
-        if (responsavel == null) responsavel = usuarioRepository.findFirstByAtivoTrue()
-            .orElseThrow(() -> new ResourceNotFoundException("Nenhum usuário ativo para registrar a comunicação"));
         Comunicacao comunicacao = criarWhatsApp(processo, responsavel, request.telefone(), request.mensagem());
         enviar(comunicacao, remoteName);
         if (comunicacao.getStatus() == StatusComunicacao.SUCESSO) atualizarAposComunicacao(processo, null, comunicacao);

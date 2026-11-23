@@ -24,17 +24,20 @@ public class ProcessoContemplacaoService {
     private final ProcessoContemplacaoRepository repository;
     private final HistoricoProcessoRepository historicoRepository;
     private final AuditoriaService auditoria;
+    private final OperacaoAcesso acesso;
     public ProcessoContemplacaoService(ProcessoContemplacaoRepository repository,
             HistoricoProcessoRepository historicoRepository,
-            AuditoriaService auditoria) {
+            AuditoriaService auditoria, OperacaoAcesso acesso) {
         this.repository = repository;
         this.historicoRepository = historicoRepository;
         this.auditoria = auditoria;
+        this.acesso = acesso;
     }
     @Transactional
     public ProcessoResponse atualizarStatus(Long id, StatusProcessoRequest request) {
         var usuario = auditoria.exigirOperador();
         ProcessoContemplacao processo = repository.bloquearPorId(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id));
+        acesso.conferirProcesso(usuario, processo);
         if (!processo.getStatus().transicoesPermitidas().contains(request.status())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Esta mudança de status não está disponível para a etapa atual. Consulte o andamento do processo.");
@@ -57,14 +60,15 @@ public class ProcessoContemplacaoService {
         String termo = q == null ? "" : q.trim();
         Specification<ProcessoContemplacao> busca = Paginacao.busca(termo, "idExterno", "origem");
         Long id = numeroDoProcesso(termo);
-        var resultado = repository.findAll((root, query, cb) -> {
+        Specification<ProcessoContemplacao> filtroBusca = (root, query, cb) -> {
             var filtro = busca.toPredicate(root, query, cb);
             if (id != null) {
                 filtro = cb.or(filtro, cb.equal(root.get("id"), id),
                         cb.equal(root.get("contemplacao").get("id"), id));
             }
             return status == null ? filtro : cb.and(filtro, cb.equal(root.get("status"), status));
-        }, pageable);
+        };
+        var resultado = repository.findAll(acesso.processosVisiveis().and(filtroBusca), pageable);
         return PaginaResponse.from(resultado.map(this::toResponse));
     }
 
@@ -77,6 +81,11 @@ public class ProcessoContemplacaoService {
     }
 
     @Transactional(readOnly = true)
-    public ProcessoResponse buscar(Long id) { return toResponse(repository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id))); }
+    public ProcessoResponse buscar(Long id) {
+        var processo = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id));
+        acesso.conferirProcesso(processo);
+        return toResponse(processo);
+    }
     private ProcessoResponse toResponse(ProcessoContemplacao p) { return new ProcessoResponse(p.getId(), p.getContemplacao().getId(), p.getResponsavel() == null ? null : p.getResponsavel().getId(), p.getStatus(), p.getCriadoEm(), p.getAtualizadoEm()); }
 }

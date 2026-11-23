@@ -23,6 +23,8 @@ import jakarta.servlet.http.HttpServletResponse;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+    static final String OPERACAO_GLOBAL = "SCOPE_OPERACAO_GLOBAL";
+    static final String ADMIN_GLOBAL = "SCOPE_ADMIN_GLOBAL";
     private final JwtService jwtService;
     private final UsuarioRepository usuarioRepository;
     private final boolean devTokenEnabled;
@@ -48,7 +50,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = header.substring(7);
             if (isDevToken(token)) {
                 var authentication = new UsernamePasswordAuthenticationToken(
-                        "dev-user", null, java.util.List.of(new SimpleGrantedAuthority("ROLE_ADMINISTRADOR")));
+                        "dev-user", null, java.util.List.of(new SimpleGrantedAuthority("ROLE_ADMINISTRADOR"),
+                                new SimpleGrantedAuthority(OPERACAO_GLOBAL), new SimpleGrantedAuthority(ADMIN_GLOBAL)));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 chain.doFilter(request, response);
                 return;
@@ -59,7 +62,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Number version = claims.get("av", Number.class);
                 Usuario usuario = uid == null ? null : usuarioRepository.findById(uid.longValue()).orElse(null);
                 if (usuario != null && usuario.isAtivo() && version != null && version.intValue() == usuario.getVersaoAutenticacao()) {
-                    var authorities = java.util.List.of(new SimpleGrantedAuthority("ROLE_" + usuario.getTipo().name()));
+                    String papel = usuario.getTipo().name();
+                    var authorities = new java.util.ArrayList<SimpleGrantedAuthority>();
+                    authorities.add(new SimpleGrantedAuthority("ROLE_" + papel));
+                    if ("ADMINISTRADOR".equals(papel) || ("FUNCIONARIO".equals(papel) && usuario.getContaId() == null)) {
+                        authorities.add(new SimpleGrantedAuthority(OPERACAO_GLOBAL));
+                        if ("ADMINISTRADOR".equals(papel)) authorities.add(new SimpleGrantedAuthority(ADMIN_GLOBAL));
+                    }
                     var authentication = new UsernamePasswordAuthenticationToken(usuario.getEmail(), null, authorities);
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }

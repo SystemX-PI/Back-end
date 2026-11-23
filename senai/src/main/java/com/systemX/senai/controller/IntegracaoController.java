@@ -97,7 +97,7 @@ public class IntegracaoController {
             @org.springframework.web.bind.annotation.RequestParam java.time.LocalDate fim,
             @org.springframework.web.bind.annotation.RequestParam(required = false)
             com.systemX.senai.enums.CanalComunicacao canal) {
-        return notifications.history(null, inicio, fim, canal);
+        return notifications.operationalHistory(inicio, fim, canal);
     }
 
     @GetMapping("/comunicacoes/fila/pagina")

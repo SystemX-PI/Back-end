@@ -15,7 +15,6 @@ import com.systemX.senai.dto.BaixaResponse;
 import com.systemX.senai.entity.Baixa;
 import com.systemX.senai.entity.HistoricoProcesso;
 import com.systemX.senai.entity.ProcessoContemplacao;
-import com.systemX.senai.entity.Usuario;
 import com.systemX.senai.enums.StatusProcesso;
 import com.systemX.senai.exception.ResourceNotFoundException;
 import com.systemX.senai.repository.BaixaRepository;
@@ -28,13 +27,15 @@ public class BaixaService {
     private final ProcessoContemplacaoRepository processoRepository;
     private final HistoricoProcessoRepository historicoRepository;
     private final AuditoriaService auditoria;
+    private final OperacaoAcesso acesso;
 
     public BaixaService(BaixaRepository baixaRepository, ProcessoContemplacaoRepository processoRepository,
-            HistoricoProcessoRepository historicoRepository, AuditoriaService auditoria) {
+            HistoricoProcessoRepository historicoRepository, AuditoriaService auditoria, OperacaoAcesso acesso) {
         this.baixaRepository = baixaRepository;
         this.processoRepository = processoRepository;
         this.historicoRepository = historicoRepository;
         this.auditoria = auditoria;
+        this.acesso = acesso;
     }
 
     // A leitura do comprovante precisa enxergar a transação que acabou de liberar o bloqueio.
@@ -43,7 +44,7 @@ public class BaixaService {
         var usuario = auditoria.exigirOperador();
         ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
-        conferirConta(usuario, processo);
+        acesso.conferirProcesso(usuario, processo);
         Baixa existente = baixaRepository.findByProcessoId(processoId).orElse(null);
         if (existente != null) return toResponse(existente);
         if (processo.getStatus() != StatusProcesso.EM_PROCESSO_DE_BAIXA) {
@@ -77,18 +78,10 @@ public class BaixaService {
     public BaixaResponse consultar(Long processoId) {
         var usuario = auditoria.exigirOperador();
         var processo = processoRepository.findById(processoId)
-                .orElseThrow(() -> new ResourceNotFoundException("Baixa não encontrada para o processo: " + processoId));
-        conferirConta(usuario, processo);
+                .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        acesso.conferirProcesso(usuario, processo);
         return baixaRepository.findByProcessoId(processoId).map(this::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Baixa não encontrada para o processo: " + processoId));
-    }
-
-    private void conferirConta(Usuario operador, ProcessoContemplacao processo) {
-        // Operadores da equipe interna sem conta vinculada mantêm o escopo operacional global.
-        Long conta = operador.getContaId();
-        if (conta != null && (processo.getCliente() == null || !conta.equals(processo.getCliente().getContaId()))) {
-            throw new ResourceNotFoundException("Baixa não encontrada para o processo: " + processo.getId());
-        }
     }
 
     private BaixaResponse toResponse(Baixa baixa) {

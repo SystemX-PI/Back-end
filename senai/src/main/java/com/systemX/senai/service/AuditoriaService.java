@@ -43,6 +43,14 @@ public class AuditoriaService {
         return usuario;
     }
 
+    public Usuario exigirOperadorGlobal() {
+        var operador = exigirOperador();
+        if (operador.getTipo() != TipoUsuario.ADMINISTRADOR && operador.getContaId() != null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso exclusivo da operação interna.");
+        }
+        return operador;
+    }
+
     @Transactional
     public void registrar(String acao, String entidade, Long registroId, String detalhes) {
         auditorias.save(Auditoria.builder().usuario(responsavel()).acao(acao)
