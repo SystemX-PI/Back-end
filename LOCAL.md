@@ -28,6 +28,27 @@ hash="$(htpasswd -niBC 5 e2e < "$scratch/test-pass" | cut -d: -f2)"
 
 Use `compose stop backend` para simular indisponibilidade. `compose up -d --wait` restaura a API e preserva o volume. O comando `compose down --volumes` é destinado apenas a esse projeto descartável após o ensaio. Remova também os arquivos efêmeros de senha. No Compose de desenvolvimento, `down` sem `--volumes` preserva os dados.
 
+### Stripe Sandbox
+
+No projeto descartável acima, use uma conta de teste e um preço recorrente mensal em BRL. Em outro terminal, inicie o listener com a Stripe CLI autenticada no mesmo sandbox:
+
+```sh
+stripe listen --forward-to http://127.0.0.1:5177/api/platform/webhooks/stripe \
+  --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,invoice.paid,invoice.payment_failed,customer.subscription.updated,customer.subscription.deleted
+```
+
+Em `"$scratch/stripe.env"`, configure `STRIPE_VERIFY_KEY`, `STRIPE_VERIFY_WEBHOOK_SECRET` e `STRIPE_VERIFY_MONTHLY_PRICE_ID`. Use o segredo gerado pelo listener e ajuste `STRIPE_VERIFY_MONTHLY_PRICE_CENTS` se o preço de teste diferir de 7990 centavos. Mantenha o arquivo privado e fora do Git. Inicie a pilha com os dois arquivos Compose:
+
+```sh
+compose_stripe() { docker compose --env-file "$scratch/compose.env" --env-file "$scratch/stripe.env" \
+  -p "$project" -f compose.verify.yml -f compose.verify.stripe.yml "$@"; }
+compose_stripe up --build -d --wait --wait-timeout 600
+(cd ../Front-End && SYSTEMX_E2E_COMPOSE=1 SYSTEMX_E2E_STRIPE=1 \
+  SYSTEMX_E2E_PASSWORD="$(cat "$scratch/test-pass")" npm run test:ui:real)
+```
+
+Forneça somente os números oficiais de teste da Stripe em `SYSTEMX_STRIPE_TEST_PAN` (aprovação) e `SYSTEMX_STRIPE_DECLINED_TEST_PAN` (recusa). Ao terminar, interrompa o listener e use `compose_stripe down --volumes` apenas no projeto descartável deste ensaio. Consulte a [Stripe CLI](https://docs.stripe.com/cli/sandbox) e os [dados oficiais de teste](https://docs.stripe.com/testing).
+
 ## Maven, Flyway e atualização
 
 - `cd senai && mvn -B -ntp verify` roda a suíte padrão com H2.
@@ -35,5 +56,6 @@ Use `compose stop backend` para simular indisponibilidade. `compose up -d --wait
 - No diretório `senai`, execute `mvn -B -ntp -Dtest=ProcessoOperacaoIntegrationTest,StripeBillingIntegrationTest,FlywayMigrationIntegrationTest -Dsystemx.test.mysql.port=33307 -Dsystemx.test.flyway.port=33307 verify`, ajustando as duas portas para a instância descartável.
 - Flyway aplica e valida V1–V21. A V2/V3 introduz dados legados de demonstração e a V7 vincula registros históricos. Confirme a política de dados antes de preparar um banco de entrega. V18 adiciona unicidade por operação. V19/V20 modifica a outbox. Pare os workers antigos antes de aplicar V20, preserve o histórico de migrações e confira reservas incertas. V21 adiciona a reserva de checkout sem reescrever assinaturas.
 - Homologue a atualização em cópia isolada antes de aplicá-la em outro ambiente. Um banco descartável usa dados fictícios e não comprova o estado de um banco de produção.
+- Para validar uma restauração, execute o teste `FlywayMigrationIntegrationTest#atualizacaoV19PreservaHistoricoEAssinaturaERecuperaSomenteDespachoSeguro` com `-Dsystemx.test.flyway.upgrade.phase=snapshot` para preparar `systemx_flyway_upgrade` na V19. Faça o backup desse schema fictício, restaure num quarto schema descartável vazio `systemx_flyway_restored` e execute o mesmo teste com `-Dsystemx.test.flyway.upgrade.phase=restore`.
 
 Veja o [guia da API e dos exemplos Postman](senai/GUIA_TESTES_POSTMAN.md).
