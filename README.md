@@ -2,7 +2,7 @@
 
 API REST da plataforma por contas de clientes: usuários da equipe, identidade da marca, múltiplas integrações WhatsApp/Gmail, teste gratuito e compra simulada. Os módulos anteriores de consórcios permanecem disponíveis no código.
 
-O cadastro e a demonstração incluem um WhatsApp e um Gmail. Somente a compra confirmada libera três WhatsApps e dois Gmails por 30 dias. Pix e cartão são simulados, com preço ilustrativo e sem cobrança real. O servidor valida o isolamento das contas e os limites.
+O cadastro e a demonstração incluem um WhatsApp e um Gmail. O servidor valida o isolamento das contas e os limites do plano. A compra é simulada por padrão. Quando configurado, o Stripe confirma o Pix avulso ou a assinatura mensal por cartão no backend.
 
 Consulte o [relatório consolidado de alterações](relatorios%20de%20altera%C3%A7%C3%B5es/RELATORIO_CONSOLIDADO_ALTERACOES.md). Os endpoints atuais ficam em `/api/platform`; o cadastro e o login ficam em `/api/auth`. As seções de consórcios abaixo documentam os módulos legados.
 
@@ -23,6 +23,8 @@ projeto/
 git clone https://github.com/SystemX-PI/Back-end.git
 git clone https://github.com/SystemX-PI/Front-End.git
 cd Back-end
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+# Preencha os segredos locais antes de prosseguir.
 docker compose --profile full up --build -d --wait --wait-timeout 600
 ```
 
@@ -31,7 +33,7 @@ No Windows, se a política local bloquear scripts, use o comando Docker acima.
 
 - Site: http://localhost:5173
 - Backend e Swagger: http://localhost:8080/swagger-ui/index.html
-- MySQL para DBeaver: localhost:3307, banco `senai`, usuário `root`, senha `root` (desenvolvimento).
+- MySQL para DBeaver: localhost:3307, banco `senai`, usuário `root`, senha configurada em `MYSQL_ROOT_PASSWORD`.
 - Evolution API: localhost:8081. O backend acessa a Evolution pela rede Docker.
 
 O comando aguarda os serviços ficarem saudáveis. O frontend é compilado e servido pelo Nginx; `/api` é encaminhado internamente ao backend em 8080. Rotas como `/app/perfil` funcionam também ao atualizar a página. Não é necessário configurar CORS ou instalar dependências no computador.
@@ -53,18 +55,9 @@ As imagens são construídas **na máquina de cada colega** a partir do Git atua
 
 O cadastro público cria uma conta de cliente. Para criar um administrador local, copie `.env.example` para `.env` **somente se ainda não existir** e preencha `LOCAL_ADMIN_EMAIL` e `LOCAL_ADMIN_PASSWORD` (mínimo 10 caracteres). Reinicie o backend para aplicar. Senhas reais e `.env` não devem ser commitados. Recuperação por e-mail exige `MAIL_ENABLED`, `MAIL_USERNAME` e `MAIL_PASSWORD`; o restante funciona sem remetente configurado.
 
-Antes da primeira execução, crie o arquivo `.env` a partir de `.env.example` e defina uma senha forte para o PostgreSQL da Evolution API. O Client ID do Google já está informado no exemplo e é repassado pelo Compose ao frontend e ao backend:
+Em macOS ou Linux, use `cp .env.example .env` na primeira configuração. Defina `MYSQL_ROOT_PASSWORD`, `POSTGRES_PASSWORD`, `JWT_SECRET` e `EVOLUTION_API_KEY` com valores fortes e distintos. Use a senha vigente para volumes MySQL e PostgreSQL já inicializados. Mudar um valor no `.env` não redefine a senha de um banco existente. O Compose repassa o Client ID público do Google para o backend e a compilação do frontend. Mantenha o `.env` fora do Git.
 
-```env
-POSTGRES_PASSWORD=defina-uma-senha-forte-e-exclusiva
-GOOGLE_CLIENT_ID=115118555400-3fvpv6ldp5afs7gjjs5sppkoul2inrme.apps.googleusercontent.com
-```
-
-O `POSTGRES_PASSWORD` é obrigatório; o Compose interrompe a inicialização caso ele não esteja definido. Não inclua o arquivo `.env` no Git.
-
-A configuração padrão permite a primeira subida sem `.env`; os valores de desenvolvimento não servem para produção. QR Code ainda exige confirmação no aparelho. Pagamentos permanecem simulados.
-
-Para diagnosticar: `docker compose --profile full ps` e `docker compose --profile full logs --tail=80`. Se 5173 ou 8080 estiverem ocupadas por processos locais, pare esses processos antes de subir. O perfil `full` substitui a necessidade de iniciar `npm run dev` ou o Compose separado do frontend.
+Para diagnosticar, use `docker compose --profile full ps`. Se houver conflito de portas, configure `FRONTEND_PORT`, `BACKEND_PORT`, `MYSQL_PORT` e `EVOLUTION_PORT` no `.env`. Os serviços expostos pelo Compose local ficam em loopback.
 
 ## Tecnologias
 
@@ -86,7 +79,7 @@ Para diagnosticar: `docker compose --profile full ps` e `docker compose --profil
 
 ## Inicializacao rapida com Docker
 
-Depois de clonar o repositorio e iniciar o Docker Desktop, execute na pasta `Back-end`:
+Depois de clonar o repositório, preparar o `.env` e iniciar o Docker Desktop, execute na pasta `Back-end`:
 
 ```powershell
 docker compose up --build
@@ -280,7 +273,7 @@ Com a análise concluída, peça, por exemplo: **“liste as issues abertas do S
 
 As branches seguem esta regra:
 
-- `main`: branch de producao. Nao fazer push direto.
+- `main`: versão oficial do código, atualizada por Pull Request após testes e revisão. Publicar código e implantar são etapas distintas.
 - `develop`: branch de integracao e validacao da equipe. As alteracoes devem chegar por Pull Request.
 - `feature/<nome>` ou `fix/<nome>`: branch individual para cada tarefa.
 
@@ -313,7 +306,7 @@ git commit -m "feat: descreve a alteracao"
 git push -u origin feature/minha-alteracao
 ```
 
-Depois, abra um Pull Request de `feature/minha-alteracao` para `develop`. A equipe revisa o diff, executa os testes e somente entao faz o merge. A `main` recebe apenas alteracoes ja validadas em `develop`.
+Depois, abra um Pull Request de `feature/minha-alteracao` para `develop`. A equipe revisa o diff, executa os testes e somente então faz o merge. Para uma entrega oficial, consolide as mudanças validadas em uma branch de integração baseada na `main` atual e abra um Pull Request para `main`.
 
 ### Regra de autorizacao
 
@@ -378,7 +371,6 @@ Veja o [relatório consolidado de alterações](relatorios%20de%20altera%C3%A7%C
 
 ## WhatsApp integrado na inicializacao
 
-O Compose inicia a Evolution API e suas dependencias com `docker compose up -d`.
-O backend recebe URL/chave internamente e aguarda a Evolution ficar saudavel.
-Depois do login administrativo, gere o QR em Integracoes > WhatsApp e escaneie no
-telefone. Veja o [relatório consolidado de alterações](relatorios%20de%20altera%C3%A7%C3%B5es/RELATORIO_CONSOLIDADO_ALTERACOES.md) para portas, persistencia e limites locais.
+A Evolution API usa PostgreSQL, Redis e volumes locais. O backend comunica-se com `http://evolution:8080` pela rede interna, com a mesma `EVOLUTION_API_KEY` do serviço Evolution. `WHATSAPP_ENABLED` habilita o envio e vem como `false` para permitir preparar o ambiente sem despachar a fila. Em ambiente de teste autorizado, habilite o canal, pareie uma conta de teste em **Integrações → WhatsApp** e confira a fila. Um aceite do provedor não confirma entrega. Despachos de resultado incerto exigem conferência do operador.
+
+Para testar Stripe sem cobranças reais, use o [procedimento de Sandbox](LOCAL.md#stripe-sandbox). A homologação externa de renovação e inadimplência por ciclo, Gmail e WhatsApp real segue pendente.

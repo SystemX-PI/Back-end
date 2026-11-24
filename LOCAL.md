@@ -2,7 +2,7 @@
 
 ## Desenvolvimento
 
-Mantenha `Back-end` e `Front-End` em diretórios irmãos. Na raiz do Back-end, confira as variáveis de `.env.example` e execute `docker compose --profile full up --build -d --wait --wait-timeout 600`. O frontend fica em 5173, a API em 8080, o MySQL na porta local configurada e a Evolution em 8081. O Nginx encaminha `/api` ao backend pela rede interna. Use o Compose padrão para desenvolvimento local e configure a exposição de rede separadamente em outro ambiente.
+Mantenha `Back-end` e `Front-End` em diretórios irmãos. Na raiz do Back-end, prepare o `.env` conforme o [README](README.md#subir-o-projeto-completo-com-docker). Execute `docker compose --profile full up --build -d --wait --wait-timeout 600`. O frontend fica em 5173, a API em 8080, o MySQL em 3307 e a Evolution em 8081 por padrão, com acesso apenas local. O Nginx encaminha `/api` ao backend pela rede interna.
 
 Para trabalhar sem containers, use Java 17, Maven, MySQL e o Vite. Configure `DB_URL`, `DB_USERNAME` e `DB_PASSWORD` para um banco local, um `JWT_SECRET` próprio e a origem do Vite em `CORS_ALLOWED_ORIGINS`. No diretório `senai`, execute `mvn spring-boot:run`. No Front-End, use `npm ci` e `npm run dev`; configure `VITE_API_PROXY_TARGET` se a API local estiver em outra porta.
 
