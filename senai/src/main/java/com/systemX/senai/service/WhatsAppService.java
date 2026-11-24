@@ -32,16 +32,20 @@ public class WhatsAppService {
     public String defaultInstance() { return instance; }
 
     public boolean isEnabled() {
-        return enabled;
+        return canSendFromInstance() && !instance.isBlank();
     }
 
-    public void send(String recipient, String text) {
-        sendFrom(instance, recipient, text);
+    public boolean canSendFromInstance() {
+        return enabled && !apiKey.isBlank();
     }
 
-    public void sendFrom(String remoteInstance, String recipient, String text) {
-        if (apiKey.isBlank() || remoteInstance.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "O serviço de WhatsApp ainda não está configurado.");
+    public String send(String recipient, String text) {
+        return sendFrom(instance, recipient, text);
+    }
+
+    public String sendFrom(String remoteInstance, String recipient, String text) {
+        if (!canSendFromInstance() || remoteInstance.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "O envio de WhatsApp está desativado ou ainda não foi configurado.");
         }
 
         String phone = recipient.replaceAll("\\D", "");
@@ -53,13 +57,14 @@ public class WhatsAppService {
         }
 
         try {
-            restClient.post()
+            var resposta = restClient.post()
                     .uri("/message/sendText/{instance}", remoteInstance)
                     .header("apikey", apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("number", phone, "text", text))
                     .retrieve()
-                    .toBodilessEntity();
+                    .toEntity(String.class);
+            return idMensagem(resposta.getBody());
         } catch (RestClientResponseException exception) {
             String message = switch (exception.getStatusCode().value()) {
                 case 400, 422 -> "O WhatsApp recusou o envio. Confira se o destinatário está cadastrado no WhatsApp e inclua DDI e DDD.";
@@ -70,9 +75,19 @@ public class WhatsAppService {
             };
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, message);
         } catch (RestClientException exception) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível acessar o serviço de WhatsApp.");
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Não foi possível acessar o serviço de WhatsApp.", exception);
         }
     }
+    private static String idMensagem(String corpo) {
+        if (corpo == null || corpo.isBlank()) return null;
+        try {
+            String id = tools.jackson.databind.json.JsonMapper.shared().readTree(corpo).path("key").path("id").asText("");
+            return id.matches("[A-Za-z0-9_-]{1,255}") ? id : null;
+        } catch (tools.jackson.core.JacksonException ex) {
+            return null;
+        }
+    }
+
     private static org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory() {
         var factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(3000);

@@ -3,11 +3,14 @@ package com.systemX.senai.service;
 import com.systemX.senai.dto.PaginaResponse;
 import com.systemX.senai.entity.Auditoria;
 import com.systemX.senai.entity.Usuario;
+import com.systemX.senai.enums.TipoUsuario;
 import com.systemX.senai.repository.AuditoriaRepository;
 import com.systemX.senai.repository.UsuarioRepository;
 import jakarta.persistence.criteria.JoinType;
 import java.time.LocalDateTime;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,25 @@ public class AuditoriaService {
     public Usuario responsavel() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         return auth == null ? null : usuarios.findByEmail(auth.getName()).orElse(null);
+    }
+
+    public Usuario exigirOperador() {
+        Usuario usuario = responsavel();
+        if (usuario == null || !usuario.isAtivo()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Sessão inválida.");
+        }
+        if (usuario.getTipo() != TipoUsuario.ADMINISTRADOR && usuario.getTipo() != TipoUsuario.FUNCIONARIO) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Operação restrita à equipe interna.");
+        }
+        return usuario;
+    }
+
+    public Usuario exigirOperadorGlobal() {
+        var operador = exigirOperador();
+        if (operador.getTipo() != TipoUsuario.ADMINISTRADOR && operador.getContaId() != null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso exclusivo da operação interna.");
+        }
+        return operador;
     }
 
     @Transactional

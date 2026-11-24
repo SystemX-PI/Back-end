@@ -24,27 +24,40 @@ public class NotificationHistoryService {
     private final ComunicacaoRepository communications;
 
     private final ProcessoContemplacaoRepository processes;
+    private final OperacaoAcesso acesso;
+    private final AuditoriaService auditoria;
 
     public NotificationHistoryService(ComunicacaoRepository communications,
-            ProcessoContemplacaoRepository processes) {
+            ProcessoContemplacaoRepository processes, OperacaoAcesso acesso, AuditoriaService auditoria) {
         this.communications = communications;
         this.processes = processes;
+        this.acesso = acesso;
+        this.auditoria = auditoria;
     }
 
     public record ProcessItem(Long id, CanalComunicacao canal, StatusComunicacao status,
             String destinatario, LocalDateTime criadaEm, LocalDateTime enviadaEm, String erro,
-            Long comunicadoOriginalId) {}
+            Long comunicadoOriginalId, com.systemX.senai.enums.EstadoDespacho estadoDespacho,
+            boolean reconciliavel) {}
 
     @Transactional(readOnly = true)
     public PaginaResponse<ProcessItem> processHistory(Long processId, int page, int size) {
         var pagination = Paginacao.pagina(page, size);
-        if (!processes.existsById(processId)) {
-            throw new ResourceNotFoundException("Processo não encontrado: " + processId);
-        }
+        var operador = auditoria.exigirOperador();
+        boolean podeReconciliar = operador.getContaId() == null
+                || operador.getTipo() == com.systemX.senai.enums.TipoUsuario.ADMINISTRADOR;
+        acesso.conferirProcesso(operador, processes.findById(processId)
+                .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processId)));
         return PaginaResponse.from(communications.findByProcessoId(processId, pagination).map(c ->
                 new ProcessItem(c.getId(), c.getCanal(), c.getStatus(), c.getDestinatario(),
                         c.getCriadaEm(), c.getEnviadaEm(), publicError(c),
-                        c.getComunicadoOriginal() == null ? null : c.getComunicadoOriginal().getId())));
+                        c.getComunicadoOriginal() == null ? null : c.getComunicadoOriginal().getId(), c.getEstadoDespacho(),
+                        podeReconciliar && c.getEstadoDespacho() == com.systemX.senai.enums.EstadoDespacho.INCERTO)));
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public NotificationHistoryResponse operationalHistory(LocalDate start, LocalDate end, CanalComunicacao channel) {
+        return history(auditoria.exigirOperador().getContaId(), start, end, channel);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -64,8 +77,7 @@ public class NotificationHistoryService {
         long failed = 0;
         for (var count : communications.countNotificationStatuses(accountId, from, until, channel)) {
             total += count.getTotal();
-            if (count.getStatus() == StatusComunicacao.SUCESSO
-                    || count.getStatus() == StatusComunicacao.REALIZADA) {
+            if (count.getStatus().aceito()) {
                 accepted += count.getTotal();
             } else if (count.getStatus() == StatusComunicacao.FALHA) {
                 failed += count.getTotal();
@@ -80,7 +92,13 @@ public class NotificationHistoryService {
                 total, accepted, total - accepted - failed, failed, items);
     }
 
-    private String publicError(Comunicacao communication) {
+    static String publicError(Comunicacao communication) {
+        if (communication.getEstadoDespacho() == com.systemX.senai.enums.EstadoDespacho.INCERTO_EXECUCAO) {
+            return "O encerramento do envio ainda não foi confirmado. A tentativa permanece bloqueada.";
+        }
+        if (communication.getStatus() == StatusComunicacao.SEM_RESPOSTA) {
+            return "O provedor não confirmou o envio. A tentativa permanece bloqueada até que o aceite seja verificado.";
+        }
         if (communication.getStatus() == StatusComunicacao.FALHA) {
             return "Não foi possível enviar a notificação. Consulte o administrador.";
         }

@@ -159,8 +159,9 @@ public class PlatformService {
        .stream().map(this::instanceView).toList();
  }
  private void requireOperator() {
-   var role = currentUser().getTipo();
-   if (role != TipoUsuario.ADMINISTRADOR && role != TipoUsuario.FUNCIONARIO) {
+   var user = currentUser();
+   var role = user.getTipo();
+   if (role != TipoUsuario.ADMINISTRADOR && (role != TipoUsuario.FUNCIONARIO || user.getContaId() != null)) {
      throw error(403, "Acesso exclusivo da operação.");
    }
  }
@@ -171,9 +172,12 @@ public class PlatformService {
    if (remoteName == null) return false;
    return "open".equalsIgnoreCase(evolution.getStatus(remoteName).state());
  }
- public PlatformInstance connectedInternalWhatsApp(Long id) {
+ public PlatformInstance internalWhatsAppSender(Long id) {
    requireOperator();
-   var instance=ownedInstance(internalAccountForOperation(),id);
+   return ownedInstance(internalAccountForOperation(), id);
+ }
+ public PlatformInstance connectedInternalWhatsApp(Long id) {
+   var instance=internalWhatsAppSender(id);
    String state;
    try {
        state=evolution.getStatus(instance.getRemoteName()).state();
