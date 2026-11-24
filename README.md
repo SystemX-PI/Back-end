@@ -253,20 +253,7 @@ docker run --rm `
 
 Ao concluir, abra o projeto no SonarQube para ver as issues, severidade, arquivo, linha, regra e o Quality Gate. A análise atual substitui os dados anteriores do mesmo projeto; não é necessário criar um projeto novo a cada execução.
 
-### 3. Integração com o Codex (IA)
-
-Para que o Codex consiga consultar as issues e aplicar a verificação de segredos antes de ler arquivos, instale e autentique a CLI uma vez no computador:
-
-```powershell
-sonar auth login -s http://localhost:9000
-sonar integrate codex --non-interactive
-```
-
-O primeiro comando abre o navegador para autenticação e guarda o token no armazenamento seguro do sistema. O segundo configura a integração do Codex, incluindo o acesso às consultas do SonarQube e os hooks de verificação. Docker Desktop deve estar aberto; depois da integração, reinicie a sessão do Codex se as ferramentas do SonarQube não aparecerem.
-
-Com a análise concluída, peça, por exemplo: **“liste as issues abertas do SonarQube”**, **“mostre o Quality Gate”** ou **“corrija a issue java:S3776 em StripeBillingService.java”**. Antes de corrigir uma issue de segurança, a alteração deve ser revisada para não reduzir a proteção da aplicação apenas para satisfazer a regra.
-
-### 4. Checklist antes do merge
+### 3. Checklist antes do merge
 
 1. Atualizar a branch com `develop`.
 2. Executar `mvn test` ou o comando completo de análise acima.

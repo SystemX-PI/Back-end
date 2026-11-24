@@ -18,7 +18,7 @@ Para habilitar a API nesse endereço, configure `CORS_ALLOWED_ORIGINS` em `Back-
 Abra o Docker Desktop. No PowerShell, execute:
 
 ```powershell
-cd "C:\Users\SWELL NUNES\Documents\Codex\2026-10-27\cr\Back-end"
+cd "C:\Projetos\SystemX\Back-end"
 docker compose --profile full up -d --wait --wait-timeout 600
 ```
 
