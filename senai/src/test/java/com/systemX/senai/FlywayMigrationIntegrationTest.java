@@ -36,7 +36,20 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     void atualizacaoV19PreservaHistoricoEAssinaturaERecuperaSomenteDespachoSeguro() {
-        var db = database("systemx_flyway_upgrade");
+        var phase = System.getProperty("systemx.test.flyway.upgrade.phase", "all");
+        var source = database("systemx_flyway_upgrade");
+        switch (phase) {
+            case "all" -> {
+                prepareV19(source);
+                verifyUpgrade(source);
+            }
+            case "snapshot" -> prepareV19(source);
+            case "restore" -> verifyUpgrade(database("systemx_flyway_restored"));
+            default -> fail("Fase de migração inválida.");
+        }
+    }
+
+    private void prepareV19(DriverManagerDataSource db) {
         assertEmpty(db);
         assertEquals(19, flyway(db, "19").migrate().migrationsExecuted);
         var sql = new JdbcTemplate(db);
@@ -57,6 +70,17 @@ class FlywayMigrationIntegrationTest {
                     stripe_subscription_status='active', professional=TRUE, paid_until='2030-01-01 12:00:00'
                 WHERE internal_operations=TRUE
                 """);
+        sql.update("""
+                INSERT INTO password_reset_rate_limit (bucket, hits, expires_at)
+                VALUES (REPEAT('a', 64), 2, 1900000000)
+                """);
+    }
+
+    private void verifyUpgrade(DriverManagerDataSource db) {
+        var before = flyway(db, "19");
+        assertEquals("19", before.info().current().getVersion().getVersion());
+        var sql = new JdbcTemplate(db);
+        assertEquals("INCERTO", sql.queryForObject("SELECT estado_despacho FROM comunicacao WHERE id=8102", String.class));
         var current = flyway(db, null);
         assertEquals(2, current.migrate().migrationsExecuted);
         current.validate();
@@ -64,6 +88,10 @@ class FlywayMigrationIntegrationTest {
         assertEquals("INCERTO_EXECUCAO", sql.queryForObject("SELECT estado_despacho FROM comunicacao WHERE id=8102", String.class));
         assertNull(sql.queryForObject("SELECT estado_despacho FROM comunicacao WHERE id=8103", String.class));
         assertEquals(1, count(sql, "SELECT COUNT(*) FROM historico_comunicacao WHERE comunicacao_id=8103"));
+        assertEquals(1, count(sql, """
+                SELECT COUNT(*) FROM password_reset_rate_limit
+                WHERE bucket=REPEAT('a',64) AND hits=2 AND expires_at=1900000000
+                """));
         assertEquals(1, count(sql, """
                 SELECT COUNT(*) FROM platform_account WHERE stripe_customer_id='cus_fixture'
                 AND stripe_subscription_id='sub_fixture' AND stripe_subscription_status='active'
