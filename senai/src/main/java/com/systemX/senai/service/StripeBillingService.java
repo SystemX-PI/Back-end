@@ -30,7 +30,6 @@ import com.stripe.param.checkout.SessionCreateParams;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
@@ -208,11 +207,11 @@ public class StripeBillingService {
                 var priceData = SessionCreateParams.LineItem.PriceData.builder()
                         .setCurrency("brl").setUnitAmount((long) monthlyPriceCents).setProductData(product).build();
                 params.setMode(SessionCreateParams.Mode.PAYMENT)
-                        .putExtraParam("payment_method_types", List.of("pix"))
+                        .addAllowedPaymentMethodType(SessionCreateParams.AllowedPaymentMethodType.PIX)
                         .addLineItem(SessionCreateParams.LineItem.builder().setPriceData(priceData).setQuantity(1L).build());
             } else {
                 params.setMode(SessionCreateParams.Mode.SUBSCRIPTION)
-                        .putExtraParam("payment_method_types", List.of("card"))
+                        .addAllowedPaymentMethodType(SessionCreateParams.AllowedPaymentMethodType.CARD)
                         .setSubscriptionData(subscriptionData)
                         .addLineItem(SessionCreateParams.LineItem.builder().setPrice(priceId).setQuantity(1L).build());
             }

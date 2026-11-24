@@ -216,7 +216,9 @@ class StripeBillingIntegrationTest {
         when(stripe.v1().checkout().sessions().retrieve(session.getId())).thenReturn(session);
         var sessions = stripe.v1().checkout().sessions();
         when(sessions.create(any(SessionCreateParams.class), any(RequestOptions.class))).thenAnswer(call -> {
-            assertEquals(SessionCreateParams.Mode.SUBSCRIPTION, call.<SessionCreateParams>getArgument(0).getMode());
+            var params = call.<SessionCreateParams>getArgument(0);
+            assertEquals(SessionCreateParams.Mode.SUBSCRIPTION, params.getMode());
+            assertEquals(java.util.List.of(SessionCreateParams.AllowedPaymentMethodType.CARD), params.getAllowedPaymentMethodTypes());
             return session;
         });
         checkout(outsider, a, "CARD").andExpect(status().isNotFound());
@@ -252,6 +254,7 @@ class StripeBillingIntegrationTest {
                 .thenAnswer(call -> {
                     var params = call.<SessionCreateParams>getArgument(0);
                     assertEquals(SessionCreateParams.Mode.PAYMENT, params.getMode());
+                    assertEquals(java.util.List.of(SessionCreateParams.AllowedPaymentMethodType.PIX), params.getAllowedPaymentMethodTypes());
                     assertEquals(9990L, params.getLineItems().get(0).getPriceData().getUnitAmount());
                     issued.add(call.<RequestOptions>getArgument(1).getIdempotencyKey());
                     return issued.size() == 1 ? incomplete : session;
