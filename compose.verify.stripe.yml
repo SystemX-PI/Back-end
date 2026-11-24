@@ -1,0 +1,21 @@
+# Use junto de compose.verify.yml, exclusivamente em projeto descartável.
+services:
+  backend:
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        case "$$STRIPE_SECRET_KEY" in
+          sk_test_*|rk_test_*|rkcs_test_*) ;;
+          *) echo "A verificação exige uma chave Stripe de teste." >&2; exit 1 ;;
+        esac
+        exec java -jar /app/app.jar
+    environment:
+      STRIPE_ENABLED: "true"
+      STRIPE_SECRET_KEY: ${STRIPE_VERIFY_KEY:?configure uma chave Stripe de sandbox}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_VERIFY_WEBHOOK_SECRET:?configure o segredo do listener local}
+      STRIPE_MONTHLY_PRICE_ID: ${STRIPE_VERIFY_MONTHLY_PRICE_ID:?configure o preço mensal BRL do sandbox}
+      STRIPE_MONTHLY_PRICE_CENTS: ${STRIPE_VERIFY_MONTHLY_PRICE_CENTS:-7990}
+      STRIPE_SUCCESS_URL: http://127.0.0.1:5177/app/assinatura?stripe=success
+      STRIPE_CANCEL_URL: http://127.0.0.1:5177/app/upgrade?stripe=cancelled
+      APP_JWT_EXPIRATION_SECONDS: "120"

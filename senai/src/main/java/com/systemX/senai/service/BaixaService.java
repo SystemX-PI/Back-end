@@ -2,61 +2,84 @@ package com.systemX.senai.service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.systemX.senai.dto.BaixaRequest;
 import com.systemX.senai.dto.BaixaResponse;
 import com.systemX.senai.entity.Baixa;
+import com.systemX.senai.entity.HistoricoProcesso;
 import com.systemX.senai.entity.ProcessoContemplacao;
 import com.systemX.senai.enums.StatusProcesso;
 import com.systemX.senai.exception.ResourceNotFoundException;
 import com.systemX.senai.repository.BaixaRepository;
+import com.systemX.senai.repository.HistoricoProcessoRepository;
 import com.systemX.senai.repository.ProcessoContemplacaoRepository;
-import com.systemX.senai.repository.UsuarioRepository;
 
 @Service
 public class BaixaService {
     private final BaixaRepository baixaRepository;
     private final ProcessoContemplacaoRepository processoRepository;
-    private final UsuarioRepository usuarioRepository;
+    private final HistoricoProcessoRepository historicoRepository;
     private final AuditoriaService auditoria;
+    private final OperacaoAcesso acesso;
 
     public BaixaService(BaixaRepository baixaRepository, ProcessoContemplacaoRepository processoRepository,
-            UsuarioRepository usuarioRepository, AuditoriaService auditoria) {
+            HistoricoProcessoRepository historicoRepository, AuditoriaService auditoria, OperacaoAcesso acesso) {
         this.baixaRepository = baixaRepository;
         this.processoRepository = processoRepository;
-        this.usuarioRepository = usuarioRepository;
+        this.historicoRepository = historicoRepository;
         this.auditoria = auditoria;
+        this.acesso = acesso;
     }
 
-    @Transactional
+    // A leitura do comprovante precisa enxergar a transação que acabou de liberar o bloqueio.
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public BaixaResponse criar(Long processoId, BaixaRequest request) {
-        ProcessoContemplacao processo = processoRepository.findById(processoId)
+        var usuario = auditoria.exigirOperador();
+        ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        acesso.conferirProcesso(usuario, processo);
         Baixa existente = baixaRepository.findByProcessoId(processoId).orElse(null);
         if (existente != null) return toResponse(existente);
-        var usuario = usuarioRepository.findById(request.usuarioId())
-                .orElseThrow(() -> new ResourceNotFoundException("Usuário não encontrado: " + request.usuarioId()));
-        if (processo.getStatus() == StatusProcesso.CANCELADO) {
-            throw new IllegalStateException("Processo cancelado não pode receber baixa");
+        if (processo.getStatus() != StatusProcesso.EM_PROCESSO_DE_BAIXA) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A baixa só pode ser concluída quando o processo está na etapa Em processo de baixa.");
         }
         Baixa baixa = new Baixa();
         baixa.setProcesso(processo);
         baixa.setUsuario(usuario);
-        baixa.setData(LocalDateTime.now(ZoneOffset.UTC));
+        baixa.setData(LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS));
         baixa.setObservacao(request.observacao());
+        var statusAnterior = processo.getStatus();
         processo.setStatus(StatusProcesso.FINALIZADO);
         processo.setResponsavel(usuario);
-        processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
+        processo.setAtualizadoEm(baixa.getData());
         processoRepository.save(processo);
+        baixaRepository.save(baixa);
+        historicoRepository.save(HistoricoProcesso.builder()
+                .processo(processo)
+                .statusAnterior(statusAnterior)
+                .novoStatus(StatusProcesso.FINALIZADO)
+                .usuario(usuario)
+                .data(baixa.getData())
+                .observacao(baixa.getObservacao())
+                .build());
         auditoria.registrar("Baixa concluída", "Processo", processoId, "Processo finalizado");
-        return toResponse(baixaRepository.save(baixa));
+        return toResponse(baixa);
     }
 
     @Transactional(readOnly = true)
     public BaixaResponse consultar(Long processoId) {
+        var usuario = auditoria.exigirOperador();
+        var processo = processoRepository.findById(processoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        acesso.conferirProcesso(usuario, processo);
         return baixaRepository.findByProcessoId(processoId).map(this::toResponse)
                 .orElseThrow(() -> new ResourceNotFoundException("Baixa não encontrada para o processo: " + processoId));
     }

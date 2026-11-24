@@ -266,29 +266,35 @@ class AuthIntegrationTest {
         var originalEmail = comunicacoes.findFirstByProcessoIdAndCanalOrderByIdAsc(
                 processoId, com.systemX.senai.enums.CanalComunicacao.EMAIL).orElseThrow();
         originalEmail.setComunicadoOficial(false);
+        String chave = java.util.UUID.randomUUID().toString();
         mockMvc.perform(post("/api/integracoes/processos/{processoId}/comunicacao/reenvio", processoId)
-                .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.whatsapp.id").isNumber());
+                .header("Authorization", "Bearer " + token).header("Idempotency-Key", chave))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.whatsapp.id").isNumber())
+                .andExpect(jsonPath("$.whatsapp.estadoDespacho").value("NA_FILA"));
         assertTrue(originalWhatsApp.isComunicadoOficial());
 
+        String mensagemOriginal = originalWhatsApp.getMensagem();
         originalWhatsApp.setMensagem("Comunicado oficial editado");
         var processo = processos.findById(processoId).orElseThrow();
         processo.setStatus(com.systemX.senai.enums.StatusProcesso.EM_ANALISE);
 
         mockMvc.perform(post("/api/integracoes/processos/{processoId}/comunicacao/reenvio", processoId)
                 .header("Authorization", "Bearer " + token))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/integracoes/processos/{processoId}/comunicacao/reenvio", processoId)
+                .header("Authorization", "Bearer " + token).header("Idempotency-Key", chave))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.processoId").value(processoId))
                 .andExpect(jsonPath("$.statusGeral").value("PENDENTE"));
         mockMvc.perform(get(history).header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(6))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(4))
                 .andExpect(jsonPath("$.items[0].comunicadoOriginalId").isNumber())
                 .andExpect(jsonPath("$.items[1].comunicadoOriginalId").isNumber());
         org.junit.jupiter.api.Assertions.assertEquals(com.systemX.senai.enums.StatusProcesso.EM_ANALISE,
                 processos.findById(processoId).orElseThrow().getStatus());
         var tentativa = comunicacoes.findFirstByProcessoIdAndCanalOrderByIdDesc(
                 processoId, com.systemX.senai.enums.CanalComunicacao.WHATSAPP).orElseThrow();
-        org.junit.jupiter.api.Assertions.assertEquals("Comunicado oficial editado", tentativa.getMensagem());
+        org.junit.jupiter.api.Assertions.assertEquals(mensagemOriginal, tentativa.getMensagem());
         var operator = criarUsuario("operador-ensaio@example.test", TipoUsuario.FUNCIONARIO);
         String operatorToken = "Bearer " + jwtService.generate(operator);
         mockMvc.perform(get("/api/integracoes/comunicacoes/remetentes-whatsapp/status")
@@ -298,9 +304,9 @@ class AuthIntegrationTest {
                 .header("Authorization", operatorToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"telefone\":\"5511999999999\",\"mensagem\":\"Ensaio sem provedor\"}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.whatsapp.status").value("PENDENTE"));
+                .andExpect(status().isConflict());
         mockMvc.perform(get(history).header("Authorization", operatorToken))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(7));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(4));
         processo.setStatus(com.systemX.senai.enums.StatusProcesso.EM_PROCESSO_DE_BAIXA);
         String baixa = "/api/integracoes/processos/" + processoId + "/baixa";
         mockMvc.perform(post(baixa).header("Authorization", operatorToken)

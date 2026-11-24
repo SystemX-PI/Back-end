@@ -8,6 +8,8 @@ Consulte o [relatório consolidado de alterações](relatorios%20de%20altera%C3%
 
 ## Subir o projeto completo com Docker
 
+O [guia local](LOCAL.md) inclui a configuração descartável de integração, o ensaio de migração e a reprodução dos testes com MySQL.
+
 Requer apenas Docker Desktop com Compose v2; Node, Java e Maven não precisam estar instalados na máquina.
 Clone os dois repositórios na mesma pasta, com estes nomes:
 
@@ -45,7 +47,7 @@ docker compose --profile full up --build -d --wait --wait-timeout 600
 
 Para apenas ligar novamente, sem mudança no código, use `docker compose --profile full up -d --wait --wait-timeout 600`. Para parar, `docker compose --profile full down` preserva os volumes e os dados.
 
-O primeiro build baixa o que estiver faltando. Os seguintes reutilizam imagens, camadas e caches npm/Maven; dependências só mudam quando os respectivos arquivos de versão mudam. Não use `--no-cache` nem limpe os volumes no fluxo normal. O build da API mantém os 15 testes existentes; o frontend faz a compilação TypeScript/Vite, sem iniciar testes de navegador.
+O primeiro build baixa o que estiver faltando. Os seguintes reutilizam imagens, camadas e caches npm/Maven; dependências só mudam quando os respectivos arquivos de versão mudam. Não use `--no-cache` nem limpe os volumes no fluxo normal. O build da API executa a suíte Maven; o frontend faz a compilação TypeScript/Vite, sem iniciar testes de navegador.
 
 As imagens são construídas **na máquina de cada colega** a partir do Git atualizado. Fazer push no GitHub não publica automaticamente imagens em um registro Docker.
 

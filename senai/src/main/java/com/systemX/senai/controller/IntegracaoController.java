@@ -4,14 +4,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestAttribute;
+import com.systemX.senai.config.IntegrationKeyFilter;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,25 +37,25 @@ import java.util.List;
 public class IntegracaoController {
     private final IntegracaoContempladoService integracaoService;
     private final BaixaService baixaService;
-    private final String integrationKey;
     private final NotificationHistoryService notifications;
+    private final com.systemX.senai.service.ComunicacaoOutbox outbox;
 
     public IntegracaoController(IntegracaoContempladoService integracaoService, BaixaService baixaService,
-            @Value("${app.integration.api-key:}") String integrationKey,
-            NotificationHistoryService notifications) {
+            NotificationHistoryService notifications, com.systemX.senai.service.ComunicacaoOutbox outbox) {
         this.integracaoService = integracaoService;
         this.baixaService = baixaService;
-        this.integrationKey = integrationKey;
         this.notifications = notifications;
+        this.outbox = outbox;
     }
 
     @Operation(summary = "Receber uma contemplação do sistema parceiro",
-            description = "Autentica a integração pelo cabeçalho X-Integration-Key.")
+            description = "Autentica a integração pelo cabeçalho X-Integration-Key.",
+            parameters = @io.swagger.v3.oas.annotations.Parameter(name = "X-Integration-Key",
+                    in = io.swagger.v3.oas.annotations.enums.ParameterIn.HEADER, required = true))
     @SecurityRequirements
     @PostMapping("/contemplacoes")
-    public ResponseEntity<IntegracaoResponse> receber(@RequestHeader("X-Integration-Key") String key,
+    public ResponseEntity<IntegracaoResponse> receber(@RequestAttribute(IntegrationKeyFilter.AUTORIZADA) boolean autorizada,
             @Valid @RequestBody ContempladoRequest request) {
-        validarChave(key);
         return ResponseEntity.status(HttpStatus.CREATED).body(integracaoService.receber(request));
     }
 
@@ -97,7 +97,7 @@ public class IntegracaoController {
             @org.springframework.web.bind.annotation.RequestParam java.time.LocalDate fim,
             @org.springframework.web.bind.annotation.RequestParam(required = false)
             com.systemX.senai.enums.CanalComunicacao canal) {
-        return notifications.history(null, inicio, fim, canal);
+        return notifications.operationalHistory(inicio, fim, canal);
     }
 
     @GetMapping("/comunicacoes/fila/pagina")
@@ -110,14 +110,23 @@ public class IntegracaoController {
     }
 
     @PostMapping("/processos/{processoId}/comunicacao/reenvio")
-    public ComunicacaoResponse reenviar(@PathVariable Long processoId) {
-        return integracaoService.reenviar(processoId);
+    public ComunicacaoResponse reenviar(@PathVariable Long processoId,
+            @org.springframework.web.bind.annotation.RequestHeader(name = "Idempotency-Key", required = false) java.util.UUID chave) {
+        return integracaoService.reenviar(processoId, chave);
     }
 
     @PostMapping("/processos/{processoId}/comunicacao/whatsapp")
     public ComunicacaoResponse whatsapp(@PathVariable Long processoId,
-            @Valid @RequestBody WhatsAppRequest request) {
-        return integracaoService.enviarWhatsApp(processoId, request);
+            @Valid @RequestBody WhatsAppRequest request,
+            @org.springframework.web.bind.annotation.RequestHeader(name = "Idempotency-Key", required = false) java.util.UUID chave) {
+        return integracaoService.enviarWhatsApp(processoId, request, chave);
+    }
+
+    @PostMapping("/processos/{processoId}/comunicacoes/{tentativaId}/reconciliacao")
+    @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reconciliar(@PathVariable Long processoId, @PathVariable Long tentativaId,
+            @Valid @RequestBody com.systemX.senai.dto.ReconciliarComunicacaoRequest request) {
+        outbox.reconciliar(processoId, tentativaId, request);
     }
 
     @PostMapping("/processos/{processoId}/baixa")
@@ -130,9 +139,4 @@ public class IntegracaoController {
         return baixaService.consultar(processoId);
     }
 
-    private void validarChave(String key) {
-        if (integrationKey.isBlank() || !integrationKey.equals(key)) {
-            throw new org.springframework.security.access.AccessDeniedException("Chave de integração inválida");
-        }
-    }
 }

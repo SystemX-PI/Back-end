@@ -66,7 +66,7 @@ public class AssistenteService {
             if (chamada.isArray() && !chamada.isEmpty()) return tratarFerramenta(chamada.get(0), usuario);
             String texto = resposta.path("choices").path(0).path("message").path("content").asText();
             return new AssistenteResposta(texto.isBlank() ? "Não consegui interpretar o pedido." : texto, null);
-        } catch (ResponseStatusException exception) {
+        } catch (ResponseStatusException | com.systemX.senai.exception.ResourceNotFoundException exception) {
             throw exception;
         } catch (Exception exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
@@ -77,12 +77,13 @@ public class AssistenteService {
     @Transactional
     public ComunicacaoResponse confirmarNotificacao(String token) {
         Usuario usuario = usuarioAtual();
-        Proposal proposal = proposals.remove(token);
-        if (proposal == null || proposal.expiresAt().isBefore(Instant.now()) || !proposal.userId().equals(usuario.getId())) {
+        Proposal proposal = proposals.get(token);
+        if (proposal == null || !proposal.userId().equals(usuario.getId())
+                || proposal.expiresAt().isBefore(Instant.now()) || !proposals.remove(token, proposal)) {
             throw new ResponseStatusException(HttpStatus.GONE, "Esta proposta expirou ou não pertence à sua sessão.");
         }
         ComunicacaoResponse resposta = comunicacoes.enviarWhatsApp(proposal.processoId(),
-                new WhatsAppRequest(proposal.telefone(), proposal.mensagem()));
+                new WhatsAppRequest(proposal.telefone(), proposal.mensagem()), UUID.fromString(token));
         auditorias.save(Auditoria.builder().usuario(usuario).acao("ASSISTENTE_NOTIFICACAO_CONFIRMADA")
                 .entidade("PROCESSO_CONTEMPLACAO").registroId(proposal.processoId())
                 .detalhes("Notificação WhatsApp confirmada pelo usuário via assistente.").build());
@@ -106,7 +107,10 @@ public class AssistenteService {
             if (id <= 0 || telefone.length() < 10 || telefone.length() > 15 || mensagem.isBlank() || mensagem.length() > 1000) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A proposta precisa de processo, telefone e mensagem válidos.");
             }
-            processos.buscar(id); // nunca propõe ação para um processo inexistente
+            processos.buscar(id);
+            if (usuario.getTipo() != com.systemX.senai.enums.TipoUsuario.ADMINISTRADOR && usuario.getContaId() != null) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Envio disponível apenas para a operação interna.");
+            }
             String token = UUID.randomUUID().toString();
             proposals.put(token, new Proposal(usuario.getId(), id, telefone, mensagem, Instant.now().plus(PROPOSAL_TTL)));
             AssistenteAcao acao = new AssistenteAcao(token, "NOTIFICAR_WHATSAPP", id, telefone, mensagem,

@@ -6,6 +6,9 @@ public interface PlatformAccountRepository extends JpaRepository<PlatformAccount
  java.util.Optional<PlatformAccount> findByStripeCustomerId(String stripeCustomerId);
  java.util.Optional<PlatformAccount> findByStripeSubscriptionId(String stripeSubscriptionId);
  @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+ @org.springframework.data.jpa.repository.Query("select a from PlatformAccount a where a.stripeCustomerId=:customerId")
+ java.util.Optional<PlatformAccount> lockByStripeCustomerId(@org.springframework.data.repository.query.Param("customerId") String customerId);
+ @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
  @org.springframework.data.jpa.repository.Query("select a from PlatformAccount a where a.id=:id")
  java.util.Optional<PlatformAccount> lockById(@org.springframework.data.repository.query.Param("id") Long id);
 }

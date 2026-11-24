@@ -29,7 +29,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim).filter(origin -> !origin.isEmpty()).toList());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Accept", "Authorization", "Content-Type", "X-Integration-Key"));
+        configuration.setAllowedHeaders(List.of("Accept", "Authorization", "Content-Type", "X-Integration-Key", "Idempotency-Key"));
         configuration.setAllowCredentials(false);
         configuration.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -43,7 +43,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtFilter) {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtFilter,
+            @Value("${app.integration.api-key:}") String integrationKey) {
         http.csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -54,22 +55,28 @@ public class SecurityConfig {
                     .requestMatchers("/api/assistente/**").hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO)
                     .requestMatchers(HttpMethod.POST, "/api/platform/webhooks/stripe").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/widget/session", "/api/widget/chat").permitAll()
-                    .requestMatchers("/api/platform/clients/**").hasRole(ROLE_ADMINISTRADOR)
-                    .requestMatchers("/api/platform/operation-channels/**").hasRole(ROLE_ADMINISTRADOR)
+                    .requestMatchers("/api/platform/clients/**").hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
+                    .requestMatchers("/api/platform/operation-channels/**").hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
                     .requestMatchers("/api/platform/**").hasAnyRole(ROLE_ADMINISTRADOR, "CLIENTE", "USUARIO")
                     .requestMatchers("/api/portal/**").hasRole("CLIENTE")
-                    .requestMatchers(HttpMethod.POST, "/api/integracoes/contemplacoes").permitAll()
-                    .requestMatchers("/api/configuracoes/**", "/api/integracoes/whatsapp/**").hasRole(ROLE_ADMINISTRADOR)
+                    .requestMatchers(IntegrationKeyFilter.ENTRADA).permitAll()
+                    .requestMatchers("/api/configuracoes/**", "/api/integracoes/whatsapp/**").hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
                     .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
-                    .requestMatchers("/api/usuarios", "/api/usuarios/**").hasRole(ROLE_ADMINISTRADOR)
+                    .requestMatchers("/api/usuarios", "/api/usuarios/**").hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
+                    .requestMatchers("/api/auditoria/**", "/api/clientes/**",
+                            "/api/integracoes/comunicacoes/remetentes-whatsapp/**")
+                        .hasAuthority(JwtAuthenticationFilter.OPERACAO_GLOBAL)
                     .requestMatchers(HttpMethod.GET, "/api/consorcios/**", "/api/cotas/**", "/api/grupos/**", "/api/tipos-consorcio/**")
-                        .hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO)
+                        .hasAuthority(JwtAuthenticationFilter.OPERACAO_GLOBAL)
                     .requestMatchers("/api/consorcios/**", "/api/cotas/**", "/api/grupos/**", "/api/tipos-consorcio/**")
-                        .hasRole(ROLE_ADMINISTRADOR)
+                        .hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
                     .requestMatchers("/api/**").hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO)
-                    .anyRequest().authenticated())                    .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint((request, response, exception) -> response.sendError(401)))
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                    .anyRequest().authenticated())
+                .exceptionHandling(exceptions -> exceptions
+                    .authenticationEntryPoint((request, response, exception) -> response.setStatus(401))
+                    .accessDeniedHandler((request, response, exception) -> response.setStatus(403)))
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new IntegrationKeyFilter(integrationKey), JwtAuthenticationFilter.class);
         return http.build();
     }
 }

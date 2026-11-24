@@ -19,7 +19,6 @@ class PlatformIntegrationTest {
  @Autowired MockMvc mvc; @Autowired PlatformService platform; @Autowired UsuarioRepository users;
  @Autowired PlatformMailboxRepository mailboxes;
  @Autowired PlatformAccountRepository accounts; @Autowired JwtService jwt;
- @Autowired com.systemX.senai.service.StripeBillingService stripe;
  @Autowired com.systemX.senai.service.AuditoriaService auditoria;
  private Usuario owner(String email) { var result=platform.signup("Conta teste",email,"senha123"); return users.findById(result.id()).orElseThrow(); }
  private String token(Usuario u) { return "Bearer "+jwt.generate(u); }
@@ -132,45 +131,11 @@ class PlatformIntegrationTest {
   mvc.perform(get("/api/platform/context").header("Authorization",old)).andExpect(status().isUnauthorized());
  }
 
- @Test void webhookStripePublicoRejeitaAssinaturaInvalida() throws Exception {
+ @Test void webhookStripePublicoSemConfiguracaoRetornaIndisponivel() throws Exception {
   mvc.perform(post("/api/platform/webhooks/stripe")
       .contentType(MediaType.APPLICATION_JSON)
-      .header("Stripe-Signature", "assinatura-invalida")
       .content("{}"))
-    .andExpect(status().isBadRequest());
- }
-
- @Test void pixStripeSoLiberaPlanoDepoisDePagoEAplicaUmaVez() throws Exception {
-  var owner=owner("pix-stripe@example.test");
-  var account=accounts.findById(owner.getContaId()).orElseThrow();
-  account.setStripePixSessionId("cs_fixture_pix");
-  account.setStripePixAmountCents(9990);
-  accounts.saveAndFlush(account);
-
-  var mapper=new com.fasterxml.jackson.databind.ObjectMapper();
-  var checkout=mapper.createObjectNode().put("id","cs_fixture_pix")
-      .put("client_reference_id",account.getId().toString()).put("mode","payment")
-      .put("currency","brl").put("amount_total",9990).put("payment_status","unpaid");
-  var payload=mapper.createObjectNode();
-  payload.putObject("data").set("object",checkout);
-  var completed=new com.stripe.model.Event();
-  completed.setId("evt_fixture_pix_completed");
-  completed.setType("checkout.session.completed");
-  stripe.process(completed,payload.toString());
-  assertFalse(account.isProfessional());
-
-  checkout.put("payment_status","paid");
-  var paid=new com.stripe.model.Event();
-  paid.setId("evt_fixture_pix_paid");
-  paid.setType("checkout.session.async_payment_succeeded");
-  stripe.process(paid,payload.toString());
-  assertTrue(account.isProfessional());
-  var expires=account.getPaidUntil();
-  assertEquals(expires,account.getStripePixPaidUntil());
-  assertNull(account.getStripePixSessionId());
-  paid.setId("evt_fixture_pix_duplicate");
-  stripe.process(paid,payload.toString());
-  assertEquals(expires,account.getPaidUntil());
+    .andExpect(status().isServiceUnavailable());
  }
 
  @Test void limiteDeTesteEPagamentoPixOuCartaoComConfirmacaoIdempotente() throws Exception {

@@ -10,10 +10,10 @@ final class FilaFiltro {
         if (!java.util.Set.of("", "FALHA", "PENDENTE", "COMUNICADO_PARCIAL", "COMUNICADO_NOS_DOIS").contains(status))
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Status invalido.");
         return (root, query, cb) -> {
-            Predicate email = canal(root, query, cb, CanalComunicacao.EMAIL, StatusComunicacao.SUCESSO, null);
-            Predicate whats = canal(root, query, cb, CanalComunicacao.WHATSAPP, StatusComunicacao.SUCESSO, null);
+            Predicate email = canal(root, query, cb, CanalComunicacao.EMAIL, StatusComunicacao.ACEITOS, null);
+            Predicate whats = canal(root, query, cb, CanalComunicacao.WHATSAPP, StatusComunicacao.ACEITOS, null);
             Predicate filtro = switch (status) {
-                case "FALHA" -> canal(root, query, cb, null, StatusComunicacao.FALHA, null);
+                case "FALHA" -> canal(root, query, cb, null, java.util.Set.of(StatusComunicacao.FALHA), null);
                 case "PENDENTE" -> cb.not(cb.or(email, whats));
                 case "COMUNICADO_PARCIAL" -> cb.or(cb.and(email, cb.not(whats)), cb.and(whats, cb.not(email)));
                 case "COMUNICADO_NOS_DOIS" -> cb.and(email, whats);
@@ -35,7 +35,7 @@ final class FilaFiltro {
         };
     }
     private static Predicate canal(Root<ProcessoContemplacao> p, CriteriaQuery<?> query, CriteriaBuilder cb,
-            CanalComunicacao canal, StatusComunicacao status, String destinatario) {
+            CanalComunicacao canal, java.util.Set<StatusComunicacao> status, String destinatario) {
         Subquery<Long> sub = query.subquery(Long.class);
         Root<Comunicacao> c = sub.from(Comunicacao.class);
         Subquery<Long> ultima = sub.subquery(Long.class);
@@ -44,7 +44,7 @@ final class FilaFiltro {
         java.util.List<Predicate> filters = new java.util.ArrayList<>();
         filters.add(cb.equal(c.get("processo"), p)); filters.add(cb.equal(c.get("id"), ultima));
         if (canal != null) filters.add(cb.equal(c.get("canal"), canal));
-        if (status != null) filters.add(cb.equal(c.get("status"), status));
+        if (status != null) filters.add(c.get("status").in(status));
         if (destinatario != null) filters.add(cb.like(cb.lower(c.get("destinatario")), destinatario, '\\'));
         sub.select(c.get("id")).where(filters.toArray(Predicate[]::new));
         return cb.exists(sub);

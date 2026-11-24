@@ -8,6 +8,8 @@ import java.util.List;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.systemX.senai.dto.ComunicacaoResponse;
@@ -23,6 +25,7 @@ import com.systemX.senai.entity.ParticipacaoCota;
 import com.systemX.senai.entity.ProcessoContemplacao;
 import com.systemX.senai.entity.Usuario;
 import com.systemX.senai.enums.CanalComunicacao;
+import com.systemX.senai.enums.EstadoDespacho;
 import com.systemX.senai.enums.StatusComunicacao;
 import com.systemX.senai.enums.StatusProcesso;
 import com.systemX.senai.enums.TipoUsuario;
@@ -45,9 +48,9 @@ public class IntegracaoContempladoService {
     private final ProcessoContemplacaoRepository processoRepository;
     private final ComunicacaoRepository comunicacaoRepository;
     private final PasswordEncoder passwordEncoder;
-    private final EmailService emailService;
     private final WhatsAppService whatsAppService;
     private final AuditoriaService auditoria;
+    private final OperacaoAcesso acesso;
     private final PlatformService platform;
 
     public IntegracaoContempladoService(
@@ -59,8 +62,7 @@ public class IntegracaoContempladoService {
             ProcessoContemplacaoRepository processoRepository,
             ComunicacaoRepository comunicacaoRepository,
             PasswordEncoder passwordEncoder,
-            EmailService emailService,
-            WhatsAppService whatsAppService, AuditoriaService auditoria, PlatformService platform) {
+            WhatsAppService whatsAppService, AuditoriaService auditoria, PlatformService platform, OperacaoAcesso acesso) {
         this.usuarioRepository = usuarioRepository;
         this.cotaRepository = cotaRepository;
         this.assembleiaRepository = assembleiaRepository;
@@ -69,31 +71,41 @@ public class IntegracaoContempladoService {
         this.processoRepository = processoRepository;
         this.comunicacaoRepository = comunicacaoRepository;
         this.passwordEncoder = passwordEncoder;
-        this.emailService = emailService;
         this.whatsAppService = whatsAppService;
         this.auditoria = auditoria;
+        this.acesso = acesso;
         this.platform = platform;
     }
 
-    @Transactional
+    // Reentregas com a mesma cota observam o commit anterior antes de consultar a chave externa.
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public IntegracaoResponse receber(ContempladoRequest request) {
+        String email = request.email().trim().toLowerCase(java.util.Locale.ROOT);
+        var cota = cotaRepository.bloquearPorId(request.cotaId())
+                .orElseThrow(() -> new ResourceNotFoundException("Cota não encontrada."));
         var existente = processoRepository.findByOrigemAndIdExterno(request.origem(), request.idExterno());
         if (existente.isPresent()) {
-            ProcessoContemplacao processo = existente.get();
-                Comunicacao comunicacao = comunicacaoRepository
-                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.EMAIL)
-                    .orElse(null);
-                Comunicacao comunicacaoWhatsApp = comunicacaoRepository
-                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.WHATSAPP)
-                    .orElse(null);
-                return response(processo, comunicacao, comunicacaoWhatsApp, true);
+            var processo = existente.get();
+            var cliente = processo.getCliente();
+            var contemplada = processo.getContemplacao();
+            if (cliente == null || !email.equalsIgnoreCase(cliente.getEmail())
+                    || !request.cotaId().equals(contemplada.getCota().getId())
+                    || !request.assembleiaId().equals(contemplada.getAssembleia().getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Evento de integração em conflito.");
+            }
+            var comunicacao = comunicacaoRepository
+                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.EMAIL).orElse(null);
+            var whatsapp = comunicacaoRepository
+                    .findFirstByProcessoIdAndCanalOrderByIdDesc(processo.getId(), CanalComunicacao.WHATSAPP).orElse(null);
+            return response(processo, comunicacao, whatsapp, true);
         }
 
-        Usuario cliente = usuarioRepository.findByEmail(request.email()).orElseGet(() -> criarCliente(request));
-        var cota = cotaRepository.findById(request.cotaId())
-                .orElseThrow(() -> new ResourceNotFoundException("Cota não encontrada: " + request.cotaId()));
         Assembleia assembleia = assembleiaRepository.findById(request.assembleiaId())
-                .orElseThrow(() -> new ResourceNotFoundException("Assembleia não encontrada: " + request.assembleiaId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Assembleia não encontrada."));
+        if (!cota.getGrupo().getId().equals(assembleia.getGrupo().getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cota e assembleia devem pertencer ao mesmo grupo.");
+        }
+        Usuario cliente = usuarioRepository.findByEmail(email).orElseGet(() -> criarCliente(request));
         Usuario responsavel = usuarioRepository.findFirstByAtivoTrue()
                 .orElseThrow(() -> new ResourceNotFoundException("Nenhum usuário ativo para registrar a comunicação"));
 
@@ -128,7 +140,7 @@ public class IntegracaoContempladoService {
         comunicacao.setComunicadoOficial(true);
         comunicacao.setAssunto(assunto);
         comunicacao.setMensagem(mensagem);
-        comunicacao.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
+        comunicacao.setCriadaEm(agora());
         comunicacaoRepository.save(comunicacao);
 
         Comunicacao comunicacaoWhatsApp = null;
@@ -162,14 +174,15 @@ public class IntegracaoContempladoService {
 
     @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public ResumoFila resumoFila() {
-        long total = processoRepository.count(FilaFiltro.criar("", ""));
-        long pendentes = processoRepository.count(FilaFiltro.criar("", "PENDENTE"));
-        long comFalha = processoRepository.count(FilaFiltro.criar("", "FALHA"));
+        var escopo = acesso.processosVisiveis();
+        long total = processoRepository.count(escopo.and(FilaFiltro.criar("", "")));
+        long pendentes = processoRepository.count(escopo.and(FilaFiltro.criar("", "PENDENTE")));
+        long comFalha = processoRepository.count(escopo.and(FilaFiltro.criar("", "FALHA")));
         return new ResumoFila(total, pendentes, total - pendentes, comFalha);
     }
 
     private com.systemX.senai.dto.PaginaResponse<FilaComunicacaoResponse> listarFilaInterna(int page, int size, String q, String status) {
-        var processos = processoRepository.findAll(FilaFiltro.criar(q, status), Paginacao.pagina(page, size));
+        var processos = processoRepository.findAll(acesso.processosVisiveis().and(FilaFiltro.criar(q, status)), Paginacao.pagina(page, size));
         var ids = processos.getContent().stream().map(ProcessoContemplacao::getId).toList();
         var canais = ids.isEmpty() ? List.<Comunicacao>of() : comunicacaoRepository.buscarUltimasEmLote(ids);
         var porProcesso = canais.stream().collect(java.util.stream.Collectors.groupingBy(c -> c.getProcesso().getId()));
@@ -182,10 +195,16 @@ public class IntegracaoContempladoService {
         }));
     }
 
-    @Transactional
-    public ComunicacaoResponse reenviar(Long processoId) {
-        ProcessoContemplacao processo = processoRepository.findById(processoId)
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public ComunicacaoResponse reenviar(Long processoId, java.util.UUID chave) {
+        ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        acesso.conferirProcesso(processo);
+        Usuario responsavel = auditoria.exigirOperadorGlobal();
+        String operacao = chave == null ? null : "oficial:" + chave;
+        var anterior = tentativas(processoId, operacao);
+        if (!anterior.isEmpty()) return toResponse(processoId, anterior);
+        conferirDisponibilidade(processoId);
         Comunicacao originalEmail = comunicacaoRepository
                 .findFirstByProcessoIdAndCanalOrderByIdAsc(processoId, CanalComunicacao.EMAIL)
                 .orElseThrow(() -> new ResourceNotFoundException("Comunicado padrão não encontrado para o processo: " + processoId));
@@ -195,20 +214,22 @@ public class IntegracaoContempladoService {
                         .findFirstByProcessoIdAndCanalAndMensagemOrderByIdAsc(
                                 processoId, CanalComunicacao.WHATSAPP, originalEmail.getMensagem())
                         .orElse(null));
-        if (originalWhatsApp != null) originalWhatsApp.setComunicadoOficial(true);
-        if (originalWhatsApp != null) originalEmail.setComunicadoOficial(true);
-        Usuario responsavel = auditoria.responsavel();
-        if (responsavel == null) responsavel = processo.getResponsavel();
 
-        Comunicacao email = reenviarCanal(originalEmail, responsavel);
-        Comunicacao whatsapp = originalWhatsApp == null ? null : reenviarCanal(originalWhatsApp, responsavel);
-        atualizarAposComunicacao(processo, email, whatsapp);
+        // Promove apenas o marcador da comunicação legada identificada, sem alterar conteúdo ou estado.
+        if (originalWhatsApp != null) {
+            originalWhatsApp.setComunicadoOficial(true);
+            originalEmail.setComunicadoOficial(true);
+        }
+
+        Comunicacao email = reenviarCanal(originalEmail, responsavel, operacao);
+        Comunicacao whatsapp = originalWhatsApp == null ? null : reenviarCanal(originalWhatsApp, responsavel, operacao);
         return toResponse(processoId, email, whatsapp);
     }
 
-    private Comunicacao reenviarCanal(Comunicacao original, Usuario responsavel) {
+    private Comunicacao reenviarCanal(Comunicacao original, Usuario responsavel, String chave) {
         Comunicacao tentativa = new Comunicacao();
         tentativa.setComunicadoOriginal(original);
+        tentativa.setChaveOperacao(chave);
         tentativa.setProcesso(original.getProcesso());
         tentativa.setCanal(original.getCanal());
         tentativa.setStatus(StatusComunicacao.PENDENTE);
@@ -216,26 +237,24 @@ public class IntegracaoContempladoService {
         tentativa.setDestinatario(original.getDestinatario());
         tentativa.setAssunto(original.getAssunto());
         tentativa.setMensagem(original.getMensagem());
-        tentativa.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
-        enviar(tentativa);
-        return tentativa;
+        tentativa.setCriadaEm(agora());
+        tentativa.setEstadoDespacho(EstadoDespacho.NA_FILA);
+        return comunicacaoRepository.save(tentativa);
     }
 
-    private void atualizarAposComunicacao(ProcessoContemplacao processo, Comunicacao email, Comunicacao whatsapp) {
-        switch (processo.getStatus()) {
-            case CONTEMPLADO, AGUARDANDO_COMUNICACAO, EM_COMUNICACAO -> {
-                boolean comunicado = (email != null && email.getStatus() == StatusComunicacao.SUCESSO)
-                        || (whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO);
-                processo.setStatus(comunicado ? StatusProcesso.CLIENTE_CONTATADO : StatusProcesso.AGUARDANDO_COMUNICACAO);
-                processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
-                processoRepository.save(processo);
-            }
-            default -> { /* Preserva o andamento após o primeiro contato. */ }
+    private void conferirDisponibilidade(Long processoId) {
+        if (comunicacaoRepository.existsByProcessoIdAndEstadoDespachoIn(processoId,
+                List.of(EstadoDespacho.NA_FILA, EstadoDespacho.EM_ENVIO, EstadoDespacho.INCERTO,
+                        EstadoDespacho.INCERTO_EXECUCAO))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Já existe um envio em andamento ou sem confirmação neste processo. Consulte o histórico antes de repetir.");
         }
     }
 
     @Transactional(readOnly = true)
     public ComunicacaoResponse consultar(Long processoId) {
+        acesso.conferirProcesso(processoRepository.findById(processoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId)));
         Comunicacao email = comunicacaoRepository
             .findFirstByProcessoIdAndCanalOrderByIdDesc(processoId, CanalComunicacao.EMAIL)
             .orElse(null);
@@ -248,19 +267,32 @@ public class IntegracaoContempladoService {
         return toResponse(processoId, email, whatsapp);
     }
 
-        @Transactional
-        public ComunicacaoResponse enviarWhatsApp(Long processoId, WhatsAppRequest request) {
-        ProcessoContemplacao processo = processoRepository.findById(processoId)
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public ComunicacaoResponse enviarWhatsApp(Long processoId, WhatsAppRequest request, java.util.UUID chave) {
+        ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
             .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        acesso.conferirProcesso(processo);
+        Usuario responsavel = auditoria.exigirOperadorGlobal();
+        String operacao = chave == null ? null : "manual:" + chave;
+        var anterior = tentativas(processoId, operacao);
+        if (!anterior.isEmpty()) {
+            var tentativa = anterior.get(0);
+            if (!java.util.Objects.equals(tentativa.getDestinatario(), request.telefone())
+                    || !java.util.Objects.equals(tentativa.getMensagem(), request.mensagem())
+                    || !java.util.Objects.equals(tentativa.getRemetenteSolicitadoId(), request.remetenteId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Esta chave já identifica outro envio.");
+            }
+            return toResponse(tentativa);
+        }
+        conferirDisponibilidade(processoId);
         String remoteName = request.remetenteId() == null ? null
-            : platform.connectedInternalWhatsApp(request.remetenteId()).getRemoteName();
-        Usuario responsavel = auditoria.responsavel();
-        if (responsavel == null) responsavel = usuarioRepository.findFirstByAtivoTrue()
-            .orElseThrow(() -> new ResourceNotFoundException("Nenhum usuário ativo para registrar a comunicação"));
+            : platform.internalWhatsAppSender(request.remetenteId()).getRemoteName();
         Comunicacao comunicacao = criarWhatsApp(processo, responsavel, request.telefone(), request.mensagem());
-        enviar(comunicacao, remoteName);
-        if (comunicacao.getStatus() == StatusComunicacao.SUCESSO) atualizarAposComunicacao(processo, null, comunicacao);
-        auditoria.registrar("Disparo manual de WhatsApp", "Processo", processoId, comunicacao.getStatus().name());
+        comunicacao.setChaveOperacao(operacao);
+        comunicacao.setRemetenteSolicitadoId(request.remetenteId());
+        comunicacao.setInstanciaDespacho(remoteName);
+        comunicacao.setEstadoDespacho(EstadoDespacho.NA_FILA);
+        auditoria.registrar("Solicitação de WhatsApp", "Processo", processoId, "Tentativa enfileirada.");
         return toResponse(comunicacao);
         }
 
@@ -273,57 +305,32 @@ public class IntegracaoContempladoService {
         comunicacao.setResponsavel(responsavel);
         comunicacao.setDestinatario(telefone);
         comunicacao.setMensagem(mensagem);
-        comunicacao.setCriadaEm(LocalDateTime.now(ZoneOffset.UTC));
+        comunicacao.setCriadaEm(agora());
         return comunicacaoRepository.save(comunicacao);
     }
 
     private Usuario criarCliente(ContempladoRequest request) {
         Usuario usuario = new Usuario();
         usuario.setNome(request.nome());
-        usuario.setEmail(request.email());
+        usuario.setEmail(request.email().trim().toLowerCase(java.util.Locale.ROOT));
         usuario.setTelefone(request.telefone());
         usuario.setSenha(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
         usuario.setTipo(TipoUsuario.CLIENTE);
         return usuarioRepository.save(usuario);
     }
 
-    private void enviar(Comunicacao comunicacao) {
-        enviar(comunicacao, null);
+    private List<Comunicacao> tentativas(Long processoId, String chave) {
+        return chave == null ? List.of() : comunicacaoRepository.findByProcessoIdAndChaveOperacao(processoId, chave);
     }
 
-    private void enviar(Comunicacao comunicacao, String remoteName) {
-        boolean whatsApp = comunicacao.getCanal() == CanalComunicacao.WHATSAPP;
-        if (whatsApp && remoteName == null && !whatsAppService.isEnabled()) {
-            comunicacao.setErro("WhatsApp desabilitado. Configure app.whatsapp.enabled=true.");
-            comunicacao.setStatus(StatusComunicacao.PENDENTE);
-            comunicacaoRepository.save(comunicacao);
-            return;
-        }
-        if (!whatsApp && !emailService.isEnabled()) {
-            comunicacao.setErro("E-mail desabilitado. Configure app.mail.enabled=true.");
-            comunicacao.setStatus(StatusComunicacao.PENDENTE);
-            comunicacaoRepository.save(comunicacao);
-            return;
-        }
-        try {
-            if (remoteName != null) {
-                whatsAppService.sendFrom(remoteName, comunicacao.getDestinatario(), comunicacao.getMensagem());
-            } else if (whatsApp) {
-                whatsAppService.send(comunicacao.getDestinatario(), comunicacao.getMensagem());
-            } else {
-                emailService.send(comunicacao.getDestinatario(), comunicacao.getAssunto(), comunicacao.getMensagem());
-            }
-            comunicacao.setStatus(StatusComunicacao.SUCESSO);
-            comunicacao.setEnviadaEm(LocalDateTime.now(ZoneOffset.UTC));
-            comunicacao.setErro(null);
-        } catch (RuntimeException exception) {
-            comunicacao.setStatus(StatusComunicacao.FALHA);
-            if (remoteName == null) comunicacao.setErro(exception.getMessage());
-            else if (exception instanceof org.springframework.web.server.ResponseStatusException providerError)
-                comunicacao.setErro(providerError.getReason());
-            else comunicacao.setErro("Não foi possível enviar pelo WhatsApp selecionado.");
-        }
-        comunicacaoRepository.save(comunicacao);
+    private ComunicacaoResponse toResponse(Long processoId, List<Comunicacao> tentativas) {
+        var email = tentativas.stream().filter(c -> c.getCanal() == CanalComunicacao.EMAIL).findFirst().orElse(null);
+        var whatsapp = tentativas.stream().filter(c -> c.getCanal() == CanalComunicacao.WHATSAPP).findFirst().orElse(null);
+        return toResponse(processoId, email, whatsapp);
+    }
+
+    private static LocalDateTime agora() {
+        return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     }
 
     private IntegracaoResponse response(ProcessoContemplacao processo, Comunicacao comunicacao,
@@ -342,8 +349,8 @@ public class IntegracaoContempladoService {
     }
 
     private ComunicacaoResponse toResponse(Long processoId, Comunicacao email, Comunicacao whatsapp) {
-        boolean emailSucesso = email != null && email.getStatus() == StatusComunicacao.SUCESSO;
-        boolean whatsappSucesso = whatsapp != null && whatsapp.getStatus() == StatusComunicacao.SUCESSO;
+        boolean emailSucesso = email != null && email.getStatus().aceito();
+        boolean whatsappSucesso = whatsapp != null && whatsapp.getStatus().aceito();
         String statusGeral;
         if (emailSucesso && whatsappSucesso) {
             statusGeral = "COMUNICADO_NOS_DOIS";
@@ -361,7 +368,7 @@ public class IntegracaoContempladoService {
             return null;
         }
         return new CanalComunicacaoResponse(comunicacao.getId(), comunicacao.getDestinatario(),
-                comunicacao.getStatus().name(), comunicacao.getErro(), comunicacao.getCriadaEm(),
-                comunicacao.getEnviadaEm());
+                comunicacao.getStatus().name(), NotificationHistoryService.publicError(comunicacao), comunicacao.getCriadaEm(),
+                comunicacao.getEnviadaEm(), comunicacao.getEstadoDespacho());
     }
 }
