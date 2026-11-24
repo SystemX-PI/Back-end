@@ -69,7 +69,7 @@ public class ComunicacaoOutbox {
         }
         for (Long id : comunicacoes.idsDespachaveis(EstadoDespacho.NA_FILA,
                 CanalComunicacao.EMAIL, email.isEnabled(), CanalComunicacao.WHATSAPP,
-                whatsapp.isEnabled(), whatsapp.isConfigured(), LOTE)) {
+                whatsapp.isEnabled(), whatsapp.canSendFromInstance(), LOTE)) {
             try {
                 processar(id);
             } catch (RuntimeException ex) {
@@ -119,7 +119,7 @@ public class ComunicacaoOutbox {
 
     private boolean canalDisponivel(Comunicacao tentativa) {
         if (tentativa.getCanal() == CanalComunicacao.EMAIL) return email.isEnabled();
-        return tentativa.getInstanciaDespacho() == null ? whatsapp.isEnabled() : whatsapp.isConfigured();
+        return tentativa.getInstanciaDespacho() == null ? whatsapp.isEnabled() : whatsapp.canSendFromInstance();
     }
 
     private Resultado enviar(Envio envio) {

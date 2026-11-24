@@ -8,6 +8,14 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 class EvolutionLifecycleTest {
+ @Test void canalDesativadoBloqueiaMesmoQuandoHaChaveEInstancia() {
+  var service = new WhatsAppService(false, "http://127.0.0.1:1", "test-only", "padrao");
+  assertFalse(service.isEnabled());
+  assertFalse(service.canSendFromInstance());
+  var error = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+      () -> service.sendFrom("account-1-suporte", "invalido", "Mensagem de teste"));
+  assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, error.getStatusCode());
+ }
  @Test void envioUsaRemetenteSelecionadoEAdicionaDdiAoNumeroLocal() throws Exception {
   var path=new java.util.concurrent.atomic.AtomicReference<String>();
   var payload=new java.util.concurrent.atomic.AtomicReference<String>();

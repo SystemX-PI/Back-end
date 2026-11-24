@@ -32,11 +32,11 @@ public class WhatsAppService {
     public String defaultInstance() { return instance; }
 
     public boolean isEnabled() {
-        return enabled && isConfigured() && !instance.isBlank();
+        return canSendFromInstance() && !instance.isBlank();
     }
 
-    public boolean isConfigured() {
-        return !apiKey.isBlank();
+    public boolean canSendFromInstance() {
+        return enabled && !apiKey.isBlank();
     }
 
     public String send(String recipient, String text) {
@@ -44,8 +44,8 @@ public class WhatsAppService {
     }
 
     public String sendFrom(String remoteInstance, String recipient, String text) {
-        if (apiKey.isBlank() || remoteInstance.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "O serviço de WhatsApp ainda não está configurado.");
+        if (!canSendFromInstance() || remoteInstance.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "O envio de WhatsApp está desativado ou ainda não foi configurado.");
         }
 
         String phone = recipient.replaceAll("\\D", "");
