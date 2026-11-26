@@ -55,6 +55,8 @@ public class AutenticacaoController {
             @NotBlank @Size(max=16384) String credential,
             @NotBlank @Size(min=2, max=255) String companyName) { }
 
+    public record GoogleRegistrationStatus(boolean canRegister) { }
+
     @Operation(summary = "Entrar com Google")
     @SecurityRequirements
     @PostMapping("/google")
@@ -67,6 +69,13 @@ public class AutenticacaoController {
     @PostMapping("/google/register")
     public AuthResponse registerWithGoogle(@Valid @RequestBody GoogleRegistration request) {
         return service.registerWithGoogle(request.credential(), request.companyName());
+    }
+
+    @Operation(summary = "Verificar se uma identidade Google pode iniciar cadastro")
+    @SecurityRequirements
+    @PostMapping("/google/registration-status")
+    public GoogleRegistrationStatus googleRegistrationStatus(@Valid @RequestBody GoogleCredential request) {
+        return new GoogleRegistrationStatus(service.canRegisterWithGoogle(request.credential()));
     }
 
     @Operation(summary = "Vincular Google à sessão atual")

@@ -93,6 +93,13 @@ public class AuthService {
         return issueTokens(platformService.signupWithGoogle(identity, companyName));
     }
 
+    @Transactional(readOnly = true)
+    public boolean canRegisterWithGoogle(String credential) {
+        GoogleIdentityService.Identity identity = googleIdentityService.verify(credential);
+        if (usuarioRepository.findByGoogleSubject(identity.subject()).isPresent()) return false;
+        return usuarioRepository.findByEmail(identity.email()).isEmpty();
+    }
+
     @Transactional
     public void linkGoogle(String credential, String authenticatedEmail) {
         GoogleIdentityService.Identity identity = googleIdentityService.verify(credential);
