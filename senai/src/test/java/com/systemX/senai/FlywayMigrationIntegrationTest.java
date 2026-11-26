@@ -16,7 +16,7 @@ class FlywayMigrationIntegrationTest {
         var db = database("systemx_flyway_fresh");
         assertEmpty(db);
         var flyway = flyway(db, null);
-        assertEquals(21, flyway.migrate().migrationsExecuted);
+        assertEquals(22, flyway.migrate().migrationsExecuted);
         flyway.validate();
         var sql = new JdbcTemplate(db);
         assertEquals("InnoDB", sql.queryForObject("""
@@ -82,7 +82,7 @@ class FlywayMigrationIntegrationTest {
         var sql = new JdbcTemplate(db);
         assertEquals("INCERTO", sql.queryForObject("SELECT estado_despacho FROM comunicacao WHERE id=8102", String.class));
         var current = flyway(db, null);
-        assertEquals(2, current.migrate().migrationsExecuted);
+        assertEquals(3, current.migrate().migrationsExecuted);
         current.validate();
         assertEquals("NA_FILA", sql.queryForObject("SELECT estado_despacho FROM comunicacao WHERE id=8101", String.class));
         assertEquals("INCERTO_EXECUCAO", sql.queryForObject("SELECT estado_despacho FROM comunicacao WHERE id=8102", String.class));

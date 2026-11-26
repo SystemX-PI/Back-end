@@ -111,7 +111,7 @@ class NotificationHistoryIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
-    @Test void globalViewIncludesLegacyProcessWithoutTenantAndMemberCannotUseGlobalRoute() throws Exception {
+    @Test void globalViewIncludesLegacyProcessAndOwnerSeesOnlyOwnCompany() throws Exception {
         var owner = owner("global-owner@test.com");
         var admin = new Usuario();
         admin.setNome("History admin"); admin.setEmail("history-admin@test.com");
@@ -127,7 +127,8 @@ class NotificationHistoryIntegrationTest {
                 .andExpect(jsonPath("$.items[0].externalId").value("legacy"));
         mvc.perform(get("/api/integracoes/comunicacoes/historico")
                     .param("inicio", "2026-11-05").param("fim", "2026-11-05")
-                    .header("Authorization", token(owner))).andExpect(status().isForbidden());
+                    .header("Authorization", token(owner))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(0));
         mvc.perform(get("/api/platform/notification-history")
                     .param("start", "2026-11-05").param("end", "2026-11-05"))
                 .andExpect(status().isUnauthorized());
