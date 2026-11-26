@@ -25,39 +25,37 @@ public class NotificationHistoryService {
 
     private final ProcessoContemplacaoRepository processes;
     private final OperacaoAcesso acesso;
-    private final AuditoriaService auditoria;
 
     public NotificationHistoryService(ComunicacaoRepository communications,
-            ProcessoContemplacaoRepository processes, OperacaoAcesso acesso, AuditoriaService auditoria) {
+            ProcessoContemplacaoRepository processes, OperacaoAcesso acesso) {
         this.communications = communications;
         this.processes = processes;
         this.acesso = acesso;
-        this.auditoria = auditoria;
     }
 
     public record ProcessItem(Long id, CanalComunicacao canal, StatusComunicacao status,
-            String destinatario, LocalDateTime criadaEm, LocalDateTime enviadaEm, String erro,
+            String destinatario, LocalDateTime criadaEm, LocalDateTime enviadaEm, String erro, String mensagem,
             Long comunicadoOriginalId, com.systemX.senai.enums.EstadoDespacho estadoDespacho,
             boolean reconciliavel) {}
 
     @Transactional(readOnly = true)
     public PaginaResponse<ProcessItem> processHistory(Long processId, int page, int size) {
         var pagination = Paginacao.pagina(page, size);
-        var operador = auditoria.exigirOperador();
-        boolean podeReconciliar = operador.getContaId() == null
-                || operador.getTipo() == com.systemX.senai.enums.TipoUsuario.ADMINISTRADOR;
+        var operador = acesso.operador();
+        boolean podeReconciliar = operador.getTipo() == com.systemX.senai.enums.TipoUsuario.ADMINISTRADOR
+                || (operador.getTipo() == com.systemX.senai.enums.TipoUsuario.FUNCIONARIO && operador.getContaId() == null);
         acesso.conferirProcesso(operador, processes.findById(processId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processId)));
         return PaginaResponse.from(communications.findByProcessoId(processId, pagination).map(c ->
                 new ProcessItem(c.getId(), c.getCanal(), c.getStatus(), c.getDestinatario(),
-                        c.getCriadaEm(), c.getEnviadaEm(), publicError(c),
+                        c.getCriadaEm(), c.getEnviadaEm(), publicError(c), c.getMensagem(),
                         c.getComunicadoOriginal() == null ? null : c.getComunicadoOriginal().getId(), c.getEstadoDespacho(),
                         podeReconciliar && c.getEstadoDespacho() == com.systemX.senai.enums.EstadoDespacho.INCERTO)));
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public NotificationHistoryResponse operationalHistory(LocalDate start, LocalDate end, CanalComunicacao channel) {
-        return history(auditoria.exigirOperador().getContaId(), start, end, channel);
+        return history(acesso.operador().getContaId(), start, end, channel);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

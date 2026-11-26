@@ -269,10 +269,17 @@ public class IntegracaoContempladoService {
 
     @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public ComunicacaoResponse enviarWhatsApp(Long processoId, WhatsAppRequest request, java.util.UUID chave) {
+        Usuario responsavel = acesso.operador();
         ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
             .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
-        acesso.conferirProcesso(processo);
-        Usuario responsavel = auditoria.exigirOperadorGlobal();
+        acesso.conferirProcesso(responsavel, processo);
+        boolean titular = responsavel.getTipo() == TipoUsuario.CLIENTE;
+        if (titular) {
+            acesso.conferirEscrita(responsavel);
+            if (chave == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe a chave de idempotência.");
+        } else {
+            auditoria.exigirOperadorGlobal();
+        }
         String operacao = chave == null ? null : "manual:" + chave;
         var anterior = tentativas(processoId, operacao);
         if (!anterior.isEmpty()) {
@@ -285,16 +292,45 @@ public class IntegracaoContempladoService {
             return toResponse(tentativa);
         }
         conferirDisponibilidade(processoId);
-        String remoteName = request.remetenteId() == null ? null
-            : platform.internalWhatsAppSender(request.remetenteId()).getRemoteName();
+        if (titular) {
+            if (processo.getStatus() == StatusProcesso.FINALIZADO || processo.getStatus() == StatusProcesso.CANCELADO) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Este processo está encerrado.");
+            }
+            var contato = telefoneDoProcesso(processo);
+            String numero = request.telefone().replaceAll("\\D", "");
+            String registrado = contato == null ? "" : contato.replaceAll("\\D", "");
+            if (!numero.matches("[1-9][0-9]{7,14}") || !numero.equals(registrado)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Use o WhatsApp registrado no processo.");
+            }
+        }
+        String remoteName = titular ? platform.remetenteDaEmpresa(responsavel, request.remetenteId()).getRemoteName()
+                : request.remetenteId() == null ? null : platform.internalWhatsAppSender(request.remetenteId()).getRemoteName();
         Comunicacao comunicacao = criarWhatsApp(processo, responsavel, request.telefone(), request.mensagem());
         comunicacao.setChaveOperacao(operacao);
         comunicacao.setRemetenteSolicitadoId(request.remetenteId());
         comunicacao.setInstanciaDespacho(remoteName);
+        if (titular) comunicacao.setContaDespachoId(responsavel.getContaId());
         comunicacao.setEstadoDespacho(EstadoDespacho.NA_FILA);
-        auditoria.registrar("Solicitação de WhatsApp", "Processo", processoId, "Tentativa enfileirada.");
+        auditoria.registrar("Solicitação de WhatsApp", "Processo", processoId, "Tentativa enfileirada.",
+                OperacaoAcesso.contaDoProcesso(processo));
         return toResponse(comunicacao);
         }
+
+    @Transactional(readOnly = true)
+    public java.util.Map<String, String> destinatarioWhatsApp(Long processoId) {
+        var operador = acesso.operador();
+        var processo = processoRepository.findById(processoId)
+                .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
+        acesso.conferirProcesso(operador, processo);
+        var telefone = telefoneDoProcesso(processo);
+        return java.util.Map.of("telefone", telefone == null ? "" : telefone);
+    }
+
+    private String telefoneDoProcesso(ProcessoContemplacao processo) {
+        return comunicacaoRepository.findFirstByProcessoIdAndCanalAndComunicadoOficialTrueOrderByIdAsc(
+                processo.getId(), CanalComunicacao.WHATSAPP).map(Comunicacao::getDestinatario)
+                .orElseGet(() -> processo.getCliente() == null ? null : processo.getCliente().getTelefone());
+    }
 
     private Comunicacao criarWhatsApp(ProcessoContemplacao processo, Usuario responsavel,
             String telefone, String mensagem) {

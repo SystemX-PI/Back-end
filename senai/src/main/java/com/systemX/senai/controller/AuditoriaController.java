@@ -22,7 +22,8 @@ public class AuditoriaController {
     public PaginaResponse<AuditoriaService.Evento> pagina(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String q,
             @RequestParam(required = false) String acao,
-            @RequestParam(required = false) java.time.LocalDate data) {
-        return auditoria.pagina(page, size, q, acao, data);
+            @RequestParam(required = false) java.time.LocalDate data,
+            @RequestParam(required = false) Long contaId) {
+        return auditoria.pagina(page, size, q, acao, data, contaId, false);
     }
 }

@@ -122,6 +122,11 @@ public class IntegracaoController {
         return integracaoService.enviarWhatsApp(processoId, request, chave);
     }
 
+    @GetMapping("/processos/{processoId}/comunicacao/whatsapp")
+    public java.util.Map<String, String> destinatarioWhatsApp(@PathVariable Long processoId) {
+        return integracaoService.destinatarioWhatsApp(processoId);
+    }
+
     @PostMapping("/processos/{processoId}/comunicacoes/{tentativaId}/reconciliacao")
     @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
     public void reconciliar(@PathVariable Long processoId, @PathVariable Long tentativaId,

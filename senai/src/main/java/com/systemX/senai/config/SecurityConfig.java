@@ -70,6 +70,14 @@ public class SecurityConfig {
                         .hasAuthority(JwtAuthenticationFilter.OPERACAO_GLOBAL)
                     .requestMatchers("/api/consorcios/**", "/api/cotas/**", "/api/grupos/**", "/api/tipos-consorcio/**")
                         .hasAuthority(JwtAuthenticationFilter.ADMIN_GLOBAL)
+                    .requestMatchers("/api/processos-contemplacao/**",
+                            "/api/integracoes/processos/{id}/baixa",
+                            "/api/integracoes/processos/{id}/comunicacao",
+                            "/api/integracoes/processos/{id}/comunicacoes/historico",
+                            "/api/integracoes/processos/{id}/comunicacao/whatsapp",
+                            "/api/integracoes/comunicacoes/fila/**",
+                            "/api/integracoes/comunicacoes/historico")
+                        .hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO, "CLIENTE")
                     .requestMatchers("/api/**").hasAnyRole(ROLE_ADMINISTRADOR, ROLE_FUNCIONARIO)
                     .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions

@@ -13,6 +13,7 @@ public class Auditoria {
     @Column(nullable = false) private String acao;
     @Column(nullable = false) private String entidade;
     private Long registroId;
+    private Long contaId;
     @Column(nullable = false) @Builder.Default private LocalDateTime data = LocalDateTime.now(ZoneOffset.UTC);
     @Column(length = 2000) private String detalhes;
 }

@@ -41,10 +41,11 @@ public class BaixaService {
     // A leitura do comprovante precisa enxergar a transação que acabou de liberar o bloqueio.
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public BaixaResponse criar(Long processoId, BaixaRequest request) {
-        var usuario = auditoria.exigirOperador();
+        var usuario = acesso.operador();
         ProcessoContemplacao processo = processoRepository.bloquearPorId(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
         acesso.conferirProcesso(usuario, processo);
+        acesso.conferirEscrita(usuario);
         Baixa existente = baixaRepository.findByProcessoId(processoId).orElse(null);
         if (existente != null) return toResponse(existente);
         if (processo.getStatus() != StatusProcesso.EM_PROCESSO_DE_BAIXA) {
@@ -70,13 +71,14 @@ public class BaixaService {
                 .data(baixa.getData())
                 .observacao(baixa.getObservacao())
                 .build());
-        auditoria.registrar("Baixa concluída", "Processo", processoId, "Processo finalizado");
+        auditoria.registrar("Baixa concluída", "Processo", processoId, "Processo finalizado",
+                OperacaoAcesso.contaDoProcesso(processo));
         return toResponse(baixa);
     }
 
     @Transactional(readOnly = true)
     public BaixaResponse consultar(Long processoId) {
-        var usuario = auditoria.exigirOperador();
+        var usuario = acesso.operador();
         var processo = processoRepository.findById(processoId)
                 .orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + processoId));
         acesso.conferirProcesso(usuario, processo);

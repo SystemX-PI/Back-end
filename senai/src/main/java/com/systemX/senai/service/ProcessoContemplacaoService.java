@@ -35,9 +35,10 @@ public class ProcessoContemplacaoService {
     }
     @Transactional
     public ProcessoResponse atualizarStatus(Long id, StatusProcessoRequest request) {
-        var usuario = auditoria.exigirOperador();
+        var usuario = acesso.operador();
         ProcessoContemplacao processo = repository.bloquearPorId(id).orElseThrow(() -> new ResourceNotFoundException("Processo não encontrado: " + id));
         acesso.conferirProcesso(usuario, processo);
+        acesso.conferirEscrita(usuario);
         if (!processo.getStatus().transicoesPermitidas().contains(request.status())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Esta mudança de status não está disponível para a etapa atual. Consulte o andamento do processo.");
@@ -55,7 +56,8 @@ public class ProcessoContemplacaoService {
         historico.setData(LocalDateTime.now(ZoneOffset.UTC));
         historico.setObservacao(request.observacao());
         historicoRepository.save(historico);
-        auditoria.registrar("Alteração de status", "Processo", id, processo.getStatus() + " → " + request.status());
+        auditoria.registrar("Alteração de status", "Processo", id, processo.getStatus() + " → " + request.status(),
+                OperacaoAcesso.contaDoProcesso(processo));
         processo.setStatus(request.status()); processo.setResponsavel(usuario); processo.setAtualizadoEm(LocalDateTime.now(ZoneOffset.UTC));
         return toResponse(repository.save(processo));
     }
