@@ -29,11 +29,12 @@ public class PlatformService {
  private final JdbcTemplate jdbc;
  private final boolean simulation;
  private final PlatformPlans plans;
+  private final AuditoriaService auditoria;
  private final boolean stripeEnabled;
  private final int stripePriceCents;
  public PlatformService(PlatformAccountRepository accounts, PlatformInstanceRepository instances,
   PlatformMailboxRepository mailboxes, UsuarioRepository users, PasswordEncoder encoder,
-  EvolutionService evolution, PlatformCredentialService credentials, JdbcTemplate jdbc, PlatformPlans plans,
+  EvolutionService evolution, PlatformCredentialService credentials, JdbcTemplate jdbc, PlatformPlans plans, AuditoriaService auditoria,
   @Value("${app.billing.simulation-enabled:false}") boolean simulation,
   @Value("${app.billing.stripe.enabled:false}") boolean stripeEnabled,
   @Value("${app.billing.stripe.secret-key:}") String stripeSecretKey,
@@ -41,7 +42,7 @@ public class PlatformService {
   @Value("${app.billing.stripe.monthly-price-id:}") String stripePriceId,
   @Value("${app.billing.stripe.monthly-price-cents:0}") int stripePriceCents) {
   this.accounts=accounts; this.instances=instances; this.mailboxes=mailboxes; this.users=users;
-  this.encoder=encoder; this.evolution=evolution; this.credentials=credentials; this.jdbc=jdbc; this.simulation=simulation&&!stripeEnabled; this.plans=plans;
+  this.encoder=encoder; this.evolution=evolution; this.credentials=credentials; this.jdbc=jdbc; this.simulation=simulation&&!stripeEnabled; this.plans=plans; this.auditoria=auditoria;
   this.stripeEnabled=stripeEnabled && !stripeSecretKey.isBlank() && !stripeWebhookSecret.isBlank() && !stripePriceId.isBlank() && stripePriceCents>0;
   this.stripePriceCents=stripePriceCents;
  }
@@ -76,6 +77,41 @@ public class PlatformService {
  private void manager() { if(currentUser().getTipo()==TipoUsuario.USUARIO || currentUser().getTipo()==TipoUsuario.FUNCIONARIO) throw error(403,"Somente o titular da conta pode alterar esta configuração."); }
  private boolean active(PlatformAccount a) { return !a.isSuspended() && (Boolean.TRUE.equals(a.getInternalOperations()) || a.getTrialEndsAt().isAfter(Instant.now()) || plans.pro(a)); }
  private void writable(PlatformAccount a) { manager(); if(!active(a)) throw error(402,a.isSuspended()?"Conta suspensa. Contate o administrador.":"Seu teste gratuito terminou. Ative a assinatura para continuar."); }
+ PlatformAccount contaTitular(Usuario usuario) {
+   if (usuario.getTipo() != TipoUsuario.CLIENTE || usuario.getContaId() == null) {
+     throw error(403, "A operação da empresa está disponível ao titular da conta.");
+   }
+   return account(usuario.getContaId());
+ }
+ public Long contaOperacionalAtual() {
+   return contaTitular(currentUser()).getId();
+ }
+ public PaginaResponse<UsuarioResponse> registrosDaEmpresa(int page, int size, String q) {
+   Long id = contaOperacionalAtual();
+   var filtro = Paginacao.<Usuario>busca(q, "nome", "email").and((root, query, cb) ->
+       cb.and(cb.equal(root.get("contaId"), id), cb.equal(root.get("tipo"), TipoUsuario.CLIENTE)));
+   return PaginaResponse.from(users.findAll(filtro, Paginacao.pagina(page, size)).map(
+       u -> new UsuarioResponse(u.getId(), u.getNome(), u.getEmail(), u.getTipo(), u.isAtivo())));
+ }
+ void exigirContaOperacional(Usuario titular) {
+   var conta = accounts.lockById(contaTitular(titular).getId()).orElseThrow(() -> error(404, ACCOUNT_NOT_FOUND));
+   writable(conta);
+ }
+ PlatformInstance remetenteDaEmpresa(Usuario titular, Long id) {
+   if (id == null) throw error(400, "Selecione um WhatsApp da empresa.");
+   var conta = contaTitular(titular);
+   var remetente = ownedInstance(conta, id);
+   if (instances.findByContaIdOrderByIdAsc(conta.getId()).stream().limit(plans.whatsappLimit(conta))
+       .noneMatch(instancia -> instancia.getId().equals(id))) throw error(402, "Este WhatsApp está fora do limite do plano.");
+   return remetente;
+ }
+ boolean remetenteAutorizadoNaFila(Long contaId, Long remetenteId, String remoteName) {
+   if (remetenteId == null || remoteName == null) return false;
+   var conta = accounts.lockById(contaId).orElse(null);
+   if (conta == null || Boolean.TRUE.equals(conta.getInternalOperations()) || !active(conta)) return false;
+   return instances.findByContaIdOrderByIdAsc(contaId).stream().limit(plans.whatsappLimit(conta))
+       .anyMatch(instancia -> remetenteId.equals(instancia.getId()) && remoteName.equals(instancia.getRemoteName()));
+ }
  @Transactional
  public UsuarioResponse signup(String name,String email,String password) {
    return createAccount(name, email, password);
@@ -119,7 +155,107 @@ public class PlatformService {
   admin();
   return jdbc.queryForList("SELECT a.id, a.nome, a.owner_email AS email, a.trial_ends_at AS trialEndsAt, a.paid_until AS paidUntil, a.suspended, a.professional, COALESCE(i.total,0) AS instances, COALESCE(m.total,0) AS gmails, COALESCE(u.total,0) AS users FROM platform_account a LEFT JOIN (SELECT conta_id, COUNT(*) total FROM platform_instance GROUP BY conta_id) i ON i.conta_id=a.id LEFT JOIN (SELECT conta_id, COUNT(*) total FROM platform_mailbox GROUP BY conta_id) m ON m.conta_id=a.id LEFT JOIN (SELECT conta_id, COUNT(*) total FROM usuario WHERE tipo <> 'CLIENTE' GROUP BY conta_id) u ON u.conta_id=a.id WHERE a.internal_operations IS NULL ORDER BY a.id DESC LIMIT 200");
  }
-  @Transactional public UsuarioResponse createClient(String name,String email,String password) { admin(); return createAccount(name,email,password); }
+ public record Empresa(Long id, String nome, String email, java.sql.Timestamp createdAt,
+     java.sql.Timestamp trialEndsAt, java.sql.Timestamp paidUntil, boolean suspended, boolean professional,
+     String billingStatus, long instances, long gmails, long users) {}
+
+ public PaginaResponse<Empresa> paginaClientes(int page, int size, String q) {
+   admin();
+   Paginacao.pagina(page, size);
+   String term = q == null ? "" : q.trim().toLowerCase(Locale.ROOT);
+   String filter = " FROM platform_account a WHERE a.internal_operations IS NULL AND "
+       + "(? = '' OR LOCATE(?, LOWER(a.nome)) > 0 OR LOCATE(?, LOWER(a.owner_email)) > 0)";
+   long total = jdbc.queryForObject("SELECT COUNT(*)" + filter, Long.class, term, term, term);
+   var items = jdbc.query("""
+       SELECT a.id, a.nome, a.owner_email AS email, a.created_at AS createdAt,
+           a.trial_ends_at AS trialEndsAt, a.paid_until AS paidUntil, a.suspended, a.professional,
+           a.stripe_subscription_status AS billingStatus,
+           (SELECT COUNT(*) FROM platform_instance i WHERE i.conta_id=a.id) AS instances,
+           (SELECT COUNT(*) FROM platform_mailbox m WHERE m.conta_id=a.id) AS gmails,
+           (SELECT COUNT(*) FROM usuario u WHERE u.conta_id=a.id AND u.tipo='USUARIO') AS users
+       """ + filter + " ORDER BY a.id DESC LIMIT ? OFFSET ?", (rs, row) ->
+       new Empresa(rs.getLong("id"), rs.getString("nome"), rs.getString("email"), rs.getTimestamp("createdAt"),
+           rs.getTimestamp("trialEndsAt"), rs.getTimestamp("paidUntil"), rs.getBoolean("suspended"),
+           rs.getBoolean("professional"), rs.getString("billingStatus"), rs.getLong("instances"),
+           rs.getLong("gmails"), rs.getLong("users")), term, term, term, size, (long) page * size);
+   return new PaginaResponse<>(items, total, page, size);
+ }
+
+ public record ResumoEmpresas(long total, long active, long subscribed, long pending,
+     long instances, long mailboxes, long members) {}
+
+ public ResumoEmpresas resumoClientes() {
+   admin();
+   var now = java.sql.Timestamp.from(Instant.now());
+   return jdbc.queryForObject("""
+       SELECT COUNT(*) AS total,
+           COUNT(CASE WHEN a.suspended=FALSE AND
+               (a.trial_ends_at>? OR (a.professional=TRUE AND a.paid_until>?)) THEN 1 END) AS active,
+           COUNT(CASE WHEN a.suspended=FALSE AND a.professional=TRUE AND a.paid_until>? THEN 1 END) AS subscribed,
+           COUNT(CASE WHEN a.suspended=FALSE AND (a.stripe_checkout_expires_at>?
+               OR a.stripe_pix_session_id IS NOT NULL OR a.stripe_subscription_status IN ('incomplete','past_due','unpaid')
+               OR EXISTS (SELECT 1 FROM platform_checkout c
+                   WHERE c.conta_id=a.id AND c.status='PENDING' AND c.expires_at>?)) THEN 1 END) AS pending,
+           (SELECT COUNT(*) FROM platform_instance i JOIN platform_account x ON x.id=i.conta_id WHERE x.internal_operations IS NULL) AS instances,
+           (SELECT COUNT(*) FROM platform_mailbox m JOIN platform_account x ON x.id=m.conta_id WHERE x.internal_operations IS NULL) AS mailboxes,
+           (SELECT COUNT(*) FROM usuario u JOIN platform_account x ON x.id=u.conta_id WHERE x.internal_operations IS NULL AND u.tipo='USUARIO') AS members
+       FROM platform_account a WHERE a.internal_operations IS NULL
+       """, (rs, row) -> new ResumoEmpresas(rs.getLong("total"), rs.getLong("active"),
+           rs.getLong("subscribed"), rs.getLong("pending"), rs.getLong("instances"),
+           rs.getLong("mailboxes"), rs.getLong("members")), now, now, now, now, now);
+ }
+
+ public Map<String,Object> detalhesCliente(Long id) {
+   admin();
+   var conta = account(id);
+   var resultado = new LinkedHashMap<String,Object>();
+   resultado.put("id", conta.getId());
+   resultado.put("name", conta.getNome());
+   resultado.put("email", conta.getOwnerEmail());
+   resultado.put("createdAt", conta.getCreatedAt());
+   resultado.put("trialEndsAt", conta.getTrialEndsAt());
+   resultado.put("paidUntil", conta.getPaidUntil());
+   resultado.put("suspended", conta.isSuspended());
+   resultado.put("active", active(conta));
+   resultado.put("subscription", plans.view(conta));
+   resultado.put("members", users.findByContaIdOrderByIdAsc(id).stream()
+       .map(u -> Map.of("id", u.getId(), "name", u.getNome(), "email", u.getEmail(),
+           "role", u.getTipo(), "active", u.isAtivo())).toList());
+   resultado.put("simulationOrders", jdbc.query("""
+       SELECT payment_method AS paymentMethod, status, amount_cents AS amountCents,
+           created_at AS createdAt, expires_at AS expiresAt, paid_at AS paidAt
+       FROM platform_checkout WHERE conta_id=? ORDER BY created_at DESC, id DESC LIMIT 20
+       """, (rs, row) -> new PedidoSimulado(rs.getString("paymentMethod"), rs.getString("status"),
+           rs.getInt("amountCents"), rs.getTimestamp("createdAt"), rs.getTimestamp("expiresAt"),
+           rs.getTimestamp("paidAt")), id));
+   return resultado;
+ }
+
+ public Map<String,Object> configuracaoAdministrativa() {
+   admin();
+   return Map.of("api", "AVAILABLE", "database", jdbc.queryForObject("SELECT 1", Integer.class) == 1,
+       "evolution", evolution.health(), "stripeConfigured", stripeEnabled, "simulationEnabled", simulation);
+ }
+
+ public record PedidoSimulado(String paymentMethod, String status, int amountCents,
+     java.sql.Timestamp createdAt, java.sql.Timestamp expiresAt, java.sql.Timestamp paidAt) {}
+ public record EventoCobranca(String type, java.sql.Timestamp processedAt) {}
+
+ public List<EventoCobranca> eventosCobranca() {
+   admin();
+   return jdbc.query("""
+       SELECT type, processed_at AS processedAt
+       FROM stripe_webhook_event ORDER BY processed_at DESC, id DESC LIMIT 20
+       """, (rs, row) -> new EventoCobranca(rs.getString("type"), rs.getTimestamp("processedAt")));
+ }
+
+ @Transactional public UsuarioResponse createClient(String name,String email,String password) {
+   admin();
+   var result = createAccount(name,email,password);
+   var owner = users.findById(result.id()).orElseThrow();
+   auditoria.registrar("Empresa cadastrada", "Empresa", owner.getContaId(), null, owner.getContaId());
+   return result;
+ }
  public Map<String,Object> context(Long id) {
    var u=currentUser();
    var map=new LinkedHashMap<String,Object>();
@@ -206,12 +342,16 @@ public class PlatformService {
  }
  @Transactional public Map<String,Object> addUser(Long id,String name,String email,String password) {
    var a=account(id); writable(a);
-   var u=new Usuario(); u.setNome(name.trim()); u.setEmail(email.trim().toLowerCase(Locale.ROOT)); u.setSenha(encoder.encode(password)); u.setTipo(TipoUsuario.USUARIO); u.setContaId(a.getId()); users.saveAndFlush(u); return userView(u);
+   var u=new Usuario(); u.setNome(name.trim()); u.setEmail(email.trim().toLowerCase(Locale.ROOT)); u.setSenha(encoder.encode(password)); u.setTipo(TipoUsuario.USUARIO); u.setContaId(a.getId()); users.saveAndFlush(u);
+   auditoria.registrar("Membro cadastrado", "Equipe", u.getId(), null, a.getId());
+   return userView(u);
  }
  @Transactional public void userActive(Long accountId,Long id,boolean active) {
    var a=account(accountId); writable(a);
    var u=users.findById(id).filter(x->a.getId().equals(x.getContaId()) && x.getTipo()==TipoUsuario.USUARIO).orElseThrow(()->error(404,"Usuário não encontrado."));
-  u.setAtivo(active); u.invalidarSessoes(); users.save(u);
+   if (u.isAtivo() == active) return;
+   u.setAtivo(active); u.invalidarSessoes(); users.save(u);
+   auditoria.registrar(active ? "Membro reativado" : "Membro desativado", "Equipe", u.getId(), null, a.getId());
  }
  @Transactional public Map<String,Object> addMailbox(Long accountId,String name,String email,String password) {
   var a=lockChannelAccount(accountId); writable(a);
@@ -221,6 +361,13 @@ public class PlatformService {
   var m=new PlatformMailbox(); m.setContaId(a.getId()); m.setNome(name.trim()); m.setEmail(email.trim().toLowerCase(Locale.ROOT)); m.setEncryptedPassword(credentials.encrypt(clean)); m.setVerified(true); mailboxes.saveAndFlush(m); return mailboxView(m);
  }
  @Transactional public void removeMailbox(Long accountId,Long id) { manager(); var a=channelAccount(accountId); var m=mailboxes.findByIdAndContaId(id,a.getId()).orElseThrow(()->error(404,"E-mail não encontrado.")); mailboxes.delete(m); }
-  @Transactional public void suspend(Long id,boolean value) { admin(); var a=accounts.findById(id).orElseThrow(()->error(404,ACCOUNT_NOT_FOUND)); a.setSuspended(value); accounts.save(a); }
+  @Transactional public void suspend(Long id,boolean value) {
+    admin();
+    var a=accounts.lockById(id).filter(conta -> !Boolean.TRUE.equals(conta.getInternalOperations()))
+        .orElseThrow(()->error(404,ACCOUNT_NOT_FOUND));
+    if (a.isSuspended() == value) return;
+    a.setSuspended(value);
+    auditoria.registrar(value ? "Empresa suspensa" : "Empresa reativada", "Empresa", id, null, id);
+  }
  private ResponseStatusException error(int status,String message) { return new ResponseStatusException(HttpStatus.valueOf(status),message); }
 }

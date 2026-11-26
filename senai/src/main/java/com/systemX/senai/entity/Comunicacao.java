@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 
 @Entity @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Comunicacao {
+    private Long contaDespachoId;
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @ManyToOne(fetch = FetchType.LAZY, optional = false) private ProcessoContemplacao processo;
     @Enumerated(EnumType.STRING) @Column(nullable = false) private CanalComunicacao canal;

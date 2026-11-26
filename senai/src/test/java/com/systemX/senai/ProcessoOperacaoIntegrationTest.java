@@ -244,8 +244,9 @@ class ProcessoOperacaoIntegrationTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         solicitarBaixa(id, token(externo), "indevida").andExpect(status().isNotFound());
         mvc.perform(get(BAIXA, id).header("Authorization", token(externo))).andExpect(status().isNotFound());
-        solicitarBaixa(id, token(titular), "indevida").andExpect(status().isForbidden());
-        mvc.perform(get(BAIXA, id).header("Authorization", token(titular))).andExpect(status().isForbidden());
+        assertEquals(original, solicitarBaixa(id, token(titular), "Repetida pelo titular")
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        mvc.perform(get(BAIXA, id).header("Authorization", token(titular))).andExpect(status().isOk());
         mvc.perform(get(BAIXA, id)).andExpect(status().isUnauthorized());
         var consulta = mvc.perform(get(BAIXA, id).header("Authorization", token(operador)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -306,7 +307,7 @@ class ProcessoOperacaoIntegrationTest {
             invocation.callRealMethod();
             em.flush();
             throw new IllegalStateException("Falha de teste após as gravações");
-        }).when(auditoria).registrar("Baixa concluída", "Processo", fixture.id(), "Processo finalizado");
+        }).when(auditoria).registrar("Baixa concluída", "Processo", fixture.id(), "Processo finalizado", null);
 
         var erro = assertThrows(ServletException.class,
                 () -> solicitarBaixa(fixture.id(), fixture.primeiroToken(), "Reverter"));
@@ -421,6 +422,44 @@ class ProcessoOperacaoIntegrationTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/portal/processos/{id}", a.getId()).header("Authorization", token(clienteB)))
                 .andExpect(status().isNotFound());
+
+        mvc.perform(get(PROCESSOS + "/pagina").param("q", "escopo-").param("accountId", casaB.getId().toString())
+                .header("Authorization", token(clienteA)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(a.getId()));
+        mvc.perform(get(PROCESSOS + "/{id}", b.getId()).header("Authorization", token(clienteA)))
+                .andExpect(status().isNotFound());
+        mvc.perform(get(PROCESSOS + "/{id}", a.getId()).header("Authorization", token(membro)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/platform/clients/summary").header("Authorization", token(clienteA)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/platform/operation/records").header("Authorization", token(clienteA)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value(clienteA.getId()));
+        mvc.perform(get("/api/platform/operation/history").header("Authorization", token(membro)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/integracoes/processos/{id}/comunicacoes/historico", a.getId())
+                .header("Authorization", token(clienteA))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+        solicitarBaixa(b.getId(), token(clienteA), "Outra empresa").andExpect(status().isNotFound());
+        mvc.perform(patch(PROCESSOS + "/{id}/status", a.getId()).header("Authorization", token(clienteA))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"EM_PROCESSO_DE_BAIXA\"}"))
+                .andExpect(status().isOk());
+        solicitarBaixa(a.getId(), token(clienteA), "Pelo titular")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.usuarioId").value(clienteA.getId()));
+        mvc.perform(get("/api/platform/operation/history").header("Authorization", token(clienteA)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2));
+        mvc.perform(get("/api/platform/operation/history").header("Authorization", token(clienteB)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0));
+        mvc.perform(get("/api/platform/clients/summary").header("Authorization", token(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").isNumber());
+        mvc.perform(get("/api/platform/clients/page").param("q", "Isolamento").header("Authorization", token(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(2));
+        mvc.perform(get("/api/platform/clients/{id}", casaA.getId()).header("Authorization", token(admin)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.members.length()").value(3))
+                .andExpect(jsonPath("$.subscription.tier").value("TRIAL"))
+                .andExpect(jsonPath("$.members[0].senha").doesNotExist());
+        mvc.perform(get("/api/platform/clients/billing-events").header("Authorization", token(admin)))
+                .andExpect(status().isOk());
 
         String revogado = token(operadorA);
         operadorA.invalidarSessoes();
@@ -748,6 +787,62 @@ class ProcessoOperacaoIntegrationTest {
         assertNull(em.find(Comunicacao.class, recuperavel).getErro());
         assertEquals(com.systemX.senai.enums.EstadoDespacho.CONCLUIDO, em.find(Comunicacao.class, parada).getEstadoDespacho());
         assertEquals(com.systemX.senai.enums.EstadoDespacho.INCERTO_EXECUCAO, em.find(Comunicacao.class, incerta).getEstadoDespacho());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void titularUsaSomenteCanalDaContaEOutboxBloqueiaAposSuspensao() throws Exception {
+        record Cenario(long processo, long conta, long remetente, long externo, String remoto, String auth) {}
+        var cenario = transactions.execute(tx -> {
+            var conta = conta("Canal próprio");
+            var externa = conta("Canal externo");
+            var owner = usuario(TipoUsuario.CLIENTE, "canal-titular");
+            owner.setContaId(conta.getId());
+            owner.setTelefone("11999999999");
+            var processo = processo("canal-titular", StatusProcesso.EM_ANALISE);
+            processo.setCliente(owner);
+            var proprio = new com.systemX.senai.entity.PlatformInstance();
+            proprio.setContaId(conta.getId());
+            proprio.setNome("Próprio");
+            proprio.setRemoteName("teste-" + UUID.randomUUID());
+            em.persist(proprio);
+            var alheio = new com.systemX.senai.entity.PlatformInstance();
+            alheio.setContaId(externa.getId());
+            alheio.setNome("Alheio");
+            alheio.setRemoteName("teste-" + UUID.randomUUID());
+            em.persist(alheio);
+            em.flush();
+            return new Cenario(processo.getId(), conta.getId(), proprio.getId(), alheio.getId(), proprio.getRemoteName(), token(owner));
+        });
+        String rota = "/api/integracoes/processos/{id}/comunicacao/whatsapp";
+        String dados = "{\"telefone\":\"%s\",\"mensagem\":\"Aviso\",\"remetenteId\":%d}";
+        var chave = UUID.randomUUID().toString();
+        mvc.perform(get(rota, cenario.processo()).header("Authorization", cenario.auth()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.telefone").value("11999999999"));
+        mvc.perform(post(rota, cenario.processo()).header("Authorization", cenario.auth())
+                .header("Idempotency-Key", chave).contentType(MediaType.APPLICATION_JSON)
+                .content(dados.formatted("11999999999", cenario.externo()))).andExpect(status().isNotFound());
+        mvc.perform(post(rota, cenario.processo()).header("Authorization", cenario.auth())
+                .header("Idempotency-Key", chave).contentType(MediaType.APPLICATION_JSON)
+                .content(dados.formatted("11988888888", cenario.remetente()))).andExpect(status().isBadRequest());
+        mvc.perform(post(rota, cenario.processo()).header("Authorization", cenario.auth())
+                .contentType(MediaType.APPLICATION_JSON).content(dados.formatted("11999999999", cenario.remetente())))
+                .andExpect(status().isBadRequest());
+
+        var pedido = post(rota, cenario.processo()).header("Authorization", cenario.auth())
+                .header("Idempotency-Key", chave).contentType(MediaType.APPLICATION_JSON)
+                .content(dados.formatted("11999999999", cenario.remetente()));
+        long tentativa = idWhatsApp(mvc.perform(pedido).andExpect(status().isOk()));
+        assertEquals(tentativa, idWhatsApp(mvc.perform(pedido).andExpect(status().isOk())));
+        transactions.executeWithoutResult(tx -> em.find(PlatformAccount.class, cenario.conta()).setSuspended(true));
+        doReturn(true).when(whatsapp).canSendFromInstance();
+        outbox.processar(tentativa);
+        verify(whatsapp, times(0)).sendFrom(cenario.remoto(), "11999999999", "Aviso");
+        mvc.perform(get("/api/integracoes/processos/{id}/comunicacoes/historico", cenario.processo())
+                .header("Authorization", cenario.auth()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].status").value("FALHA"))
+                .andExpect(jsonPath("$.items[0].reconciliavel").value(false));
     }
 
     private long enfileirarWhatsApp(Fixture fixture, String chave) throws Exception {

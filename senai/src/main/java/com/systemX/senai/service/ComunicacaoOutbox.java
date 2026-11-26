@@ -37,11 +37,12 @@ public class ComunicacaoOutbox {
     private final WhatsAppService whatsapp;
     private final AuditoriaService auditoria;
     private final OperacaoAcesso acesso;
+    private final PlatformService plataforma;
     private final TransactionTemplate transacao;
 
     public ComunicacaoOutbox(ComunicacaoRepository comunicacoes, HistoricoComunicacaoRepository historico,
             ProcessoContemplacaoRepository processos, EmailService email, WhatsAppService whatsapp,
-            AuditoriaService auditoria, OperacaoAcesso acesso, TransactionTemplate transacao) {
+            AuditoriaService auditoria, OperacaoAcesso acesso, PlatformService plataforma, TransactionTemplate transacao) {
         this.comunicacoes = comunicacoes;
         this.historico = historico;
         this.processos = processos;
@@ -49,6 +50,7 @@ public class ComunicacaoOutbox {
         this.whatsapp = whatsapp;
         this.auditoria = auditoria;
         this.acesso = acesso;
+        this.plataforma = plataforma;
         this.transacao = transacao;
     }
 
@@ -111,6 +113,14 @@ public class ComunicacaoOutbox {
             return null;
         }
         if (!canalDisponivel(tentativa)) return null;
+        Long conta = tentativa.getContaDespachoId();
+        if (conta != null && (!conta.equals(OperacaoAcesso.contaDoProcesso(processo))
+                || !plataforma.remetenteAutorizadoNaFila(conta, tentativa.getRemetenteSolicitadoId(),
+                        tentativa.getInstanciaDespacho()))) {
+            registrarResultado(tentativa, concluido(StatusComunicacao.FALHA, null,
+                    "A conta ou o remetente deixou de estar autorizado antes do despacho."), null);
+            return null;
+        }
         tentativa.setEstadoDespacho(EstadoDespacho.EM_ENVIO);
         tentativa.setDespachoIniciadoEm(agora());
         return new Envio(tentativa.getCanal(), tentativa.getDestinatario(), tentativa.getAssunto(),

@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import com.systemX.senai.service.PlatformService;
 import com.systemX.senai.service.ProfileService;
 import com.systemX.senai.service.NotificationHistoryService;
+import com.systemX.senai.service.AuditoriaService;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.HttpStatus;
 import jakarta.validation.Valid;
@@ -17,11 +18,14 @@ public class PlataformaController {
  private final PlatformService service;
  private final ProfileService profile;
  private final NotificationHistoryService notifications;
+ private final AuditoriaService auditoria;
 
- public PlataformaController(PlatformService service, ProfileService profile, NotificationHistoryService notifications) {
+ public PlataformaController(PlatformService service, ProfileService profile, NotificationHistoryService notifications,
+     AuditoriaService auditoria) {
   this.service = service;
   this.profile = profile;
   this.notifications = notifications;
+  this.auditoria = auditoria;
  }
  public record Person(@NotBlank @Size(max=120) String name,@NotBlank @Email @Size(max=255) String email,@NotBlank @Size(min=6,max=100) String password) {}
  public record Instance(@NotBlank @Pattern(regexp="[A-Za-z0-9_-]{1,60}") String name) {}
@@ -40,6 +44,24 @@ public class PlataformaController {
  }
  @Operation(summary = "Listar contas de clientes", description = "Acesso exclusivo da administração da plataforma.")
  @GetMapping("/clients") public Object clients() { return service.clients(); }
+ @GetMapping("/clients/summary") public Object clientsSummary() { return service.resumoClientes(); }
+ @GetMapping("/clients/page") public Object clientsPage(@RequestParam(defaultValue="0") int page,
+     @RequestParam(defaultValue="20") int size, @RequestParam(defaultValue="") String q) {
+  return service.paginaClientes(page, size, q);
+ }
+ @GetMapping("/clients/{id}") public Object clientDetails(@PathVariable Long id) { return service.detalhesCliente(id); }
+ @GetMapping("/clients/settings") public Object platformSettings() { return service.configuracaoAdministrativa(); }
+ @GetMapping("/clients/billing-events") public Object billingEvents() { return service.eventosCobranca(); }
+ @GetMapping("/operation/records") public Object companyRecords(@RequestParam(defaultValue="0") int page,
+     @RequestParam(defaultValue="20") int size, @RequestParam(defaultValue="") String q) {
+  return service.registrosDaEmpresa(page, size, q);
+ }
+ @GetMapping("/operation/history") public Object companyHistory(@RequestParam(defaultValue="0") int page,
+     @RequestParam(defaultValue="20") int size, @RequestParam(required=false) String q,
+     @RequestParam(required=false) String acao, @RequestParam(required=false) java.time.LocalDate data) {
+  var conta = service.contaOperacionalAtual();
+  return auditoria.pagina(page, size, q, acao, data, conta, true);
+ }
  @Operation(summary = "Criar conta de cliente", description = "Acesso exclusivo da administração da plataforma.")
  @PostMapping("/clients") @ResponseStatus(HttpStatus.CREATED) public com.systemX.senai.dto.UsuarioResponse client(@Valid @RequestBody Person p) { return service.createClient(p.name(),p.email(),p.password()); }
  @Operation(summary = "Ativar ou suspender conta de cliente", description = "Acesso exclusivo da administração da plataforma.")

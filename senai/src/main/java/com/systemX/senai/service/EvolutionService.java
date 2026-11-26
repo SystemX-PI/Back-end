@@ -86,6 +86,16 @@ public class EvolutionService {
         return response(instanceName, state, null, null, null);
     }
 
+    public String health() {
+        if (apiKey.isBlank()) return "UNCONFIGURED";
+        try {
+            get("/instance/fetchInstances");
+            return "AVAILABLE";
+        } catch (RestClientResponseException | ResponseStatusException ex) {
+            return "UNAVAILABLE";
+        }
+    }
+
     public void disconnect(String instanceName) { deleteRemote("/instance/logout/", instanceName); }
     public void remove(String instanceName) { deleteRemote("/instance/delete/", instanceName); }
     private void deleteRemote(String path, String instanceName) {
